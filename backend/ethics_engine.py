@@ -249,69 +249,56 @@ class EthicsEngine:
             "layer3_evidence": {"audit_trail": [], "explanations": {}}
         }
 
-        # BUG #1 FIX: Check ALL L1 gates first. Break immediately on first FAIL for efficiency and single-failure gating.
-        l1_fails = False
+        total_risk = 0.0
+        l1_fail_count = 0
+        passing_dims = 0
+        weight = 1.0 / len(self.dimensions)
         audit_trail = []
         
+        # Step 1 & 2: Evaluate ALL dimensions independently
         for key, dim in self.dimensions.items():
             m = all_metrics.get(key, {})
             l1_status, reasons = dim.evaluate_layer1(m)
             
-            # Record L1 result to dimension_results
+            if l1_status == "PASS":
+                # Only evaluate L2 risk for dimensions that pass L1
+                risk, indicators = dim.evaluate_layer2(m)
+                total_risk += risk * weight
+                passing_dims += 1
+                status_str = f"✅ PASS (L2: {risk:.2f})"
+            else:
+                l1_fail_count += 1
+                risk, indicators = 0.0, [] # Blocked dimensions contribute 0 risk
+                status_str = f"❌ FAIL"
+            
+            # Record results per dimension
             res["dimension_results"][key] = {
                 "l1_status": l1_status, 
                 "l1_reasons": reasons, 
-                "l2_risk": 0.0,
-                "l2_indicators": []
+                "l2_risk": risk,
+                "l2_indicators": indicators
             }
-            audit_trail.append(f"L1 {dim.name}: {l1_status}")
-            
-            if l1_status == "FAIL":
-                l1_fails = True
-                res["final_label"] = "UNETHICAL"
-                res["layer1_status"] = "FAIL"
-                res["risk_band"] = "CRITICAL"
-                res["required_action"] = "BLOCK_AND_PURGE"
-                # BUG #1 FIX: Break early after first FAIL as per spec
-                break 
+            audit_trail.append(f"L1 {dim.name}: {status_str}")
 
-        # If L1 failed, generate L3 using existing results and exit
-        if l1_fails:
-            res["layer3_evidence"]["audit_trail"] = audit_trail
-            # BUG #2 FIX: Generate L3 now for the current state using STORED dimension_results
-            for key, dim in self.dimensions.items():
-                m = all_metrics.get(key, {})
-                dim_res = res["dimension_results"].get(key, {"l1_status": "SKIPPED", "l1_reasons": [], "l2_risk": 0.0, "l2_indicators": []})
-                res["layer3_evidence"]["explanations"][key] = dim.get_layer3_evidence(
-                    m, (dim_res["l1_status"], dim_res["l1_reasons"]), (0.0, [])
-                )
-            return res
-
-        # LAYER 2: Risk Scoring (Only if ALL L1 pass)
-        total_risk = 0.0
-        w = 1.0 / len(self.dimensions)
-        for key, dim in self.dimensions.items():
-            m = all_metrics.get(key, {})
-            risk, indicators = dim.evaluate_layer2(m)
-            total_risk += risk * w
-            
-            # BUG #2 FIX: Store L2 results to avoid recomputation later
-            res["dimension_results"][key]["l2_risk"] = risk
-            res["dimension_results"][key]["l2_indicators"] = indicators
-            audit_trail.append(f"L2 {dim.name} Risk: {risk:.2f}")
-        
         res["layer2_risk_score"] = float(total_risk)
         res["layer3_evidence"]["audit_trail"] = audit_trail
 
-        # Ternary Decision logic
-        if total_risk <= RISK_THRESHOLDS["tau1"]:
-            res["final_label"], res["risk_band"] = "ETHICAL", "LOW"
-        elif total_risk <= RISK_THRESHOLDS["tau2"]:
-            res["final_label"], res["risk_band"], res["required_action"] = "CONDITIONALLY_ETHICAL", "MEDIUM", "HUMAN_REVIEW"
-        else:
+        # Step 3: Threshold and Decision Logic (Proportional Response)
+        if passing_dims == 0:
+            res["final_label"], res["risk_band"], res["required_action"] = "UNETHICAL", "CRITICAL", "BLOCK_AND_PURGE"
+            res["layer1_status"] = "FAIL"
+        elif total_risk > RISK_THRESHOLDS["tau2"]:
             res["final_label"], res["risk_band"], res["required_action"] = "UNETHICAL", "HIGH", "BLOCK_AND_REVIEW"
+        elif l1_fail_count > 0:
+            res["final_label"], res["risk_band"] = "CONDITIONALLY_ETHICAL", "MEDIUM"
+            failed_names = [self.dimensions[k].name for k, v in res["dimension_results"].items() if v["l1_status"] == "FAIL"]
+            res["required_action"] = f"REVIEW_FAILED_DIMS ({', '.join(failed_names)})"
+        elif total_risk > RISK_THRESHOLDS["tau1"]:
+            res["final_label"], res["risk_band"], res["required_action"] = "CONDITIONALLY_ETHICAL", "MEDIUM", "HUMAN_REVIEW (Risk)"
+        else:
+            res["final_label"], res["risk_band"], res["required_action"] = "ETHICAL", "LOW", "NONE"
 
-        # LAYER 3: Evidence Bundle (Generate from STORED l1/l2 results to avoid waste)
+        # LAYER 3: Generate forensic explanations from stored results
         for key, dim in self.dimensions.items():
             m = all_metrics.get(key, {})
             dr = res["dimension_results"][key]

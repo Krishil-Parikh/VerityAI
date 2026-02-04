@@ -143,7 +143,7 @@ def build_rag_index():
             continue
         try:
             doc = fitz.open(path)
-            doc_id = pdf_file.replace(".pdf", "")
+            doc_id = pdf_file
             for page_num in range(len(doc)):
                 text = doc[page_num].get_text("text").strip()
                 if not text: continue
@@ -435,10 +435,15 @@ def format_rag_citations(retrieved: list) -> list:
     """Format retrieved PDF chunks as proper citations"""
     citations = []
     for i, r in enumerate(retrieved, 1):
+        # Generate absolute file URI for clickable links
+        abs_path = os.path.abspath(os.path.join(PDF_DIR, r["doc"]))
+        file_uri = f"file:///{abs_path.replace(os.sep, '/')}#page={r['page']}"
+        
         citations.append({
             "citation_id": i,
             "document": r["doc"],
             "page": r["page"],
+            "uri": file_uri,
             "relevance_score": round(r["score"], 4),
             "excerpt": r["text"][:300] + "..." if len(r["text"]) > 300 else r["text"]
         })
@@ -663,19 +668,14 @@ while True:
     print(f"ACTION REQUIRED: {ethical_decision['required_action']}")
     print(f"{'-'*80}")
 
-    # Layer 1 Status
-    l1_icon = "✅" if ethical_decision["layer1_status"] == "PASS" else "❌" if ethical_decision["layer1_status"] == "FAIL" else "ℹ️"
-    print(f"LAYER 1 (HARD GATE): {l1_icon} {ethical_decision['layer1_status']}")
+    # Combined Layer 1 & 2 Granular Status
+    print(f"DIMENSION-LEVEL AUDIT (L1 Gate -> L2 Risk):")
     for audit_entry in ethical_decision["layer3_evidence"]["audit_trail"]:
-        if "L1" in audit_entry:
-            print(f"  └─ {audit_entry}")
+        print(f"  {audit_entry}")
 
-    # Layer 2 Status
+    print(f"\nTOTAL AGGREGATED RISK: {ethical_decision['layer2_risk_score']:.2f}/1.0 (from passing dimensions)")
     l2_icon = "🟢" if band == "LOW" else "🟡" if band == "MEDIUM" else "🔴"
-    print(f"LAYER 2 (RISK SCORE): {l2_icon} {ethical_decision['layer2_risk_score']:.2f}/1.0")
-    for audit_entry in ethical_decision["layer3_evidence"]["audit_trail"]:
-        if "L2" in audit_entry:
-            print(f"  └─ {audit_entry}")
+    print(f"RISK ASSESSMENT: {l2_icon} {band}")
 
     # Layer 3 Status
     print(f"LAYER 3 (FORENSIC BUNDLE): 📂 Auditor-Ready Spec (36/36 Metrics)")
@@ -701,6 +701,7 @@ while True:
     rag_citations = format_rag_citations(retrieved)
     for cite in rag_citations:
         print(f"\n[{cite['citation_id']}] {cite['document']} - Page {cite['page']}")
+        print(f"    Link: {cite['uri']}")
         print(f"    Relevance: {cite['relevance_score']:.4f}")
         print(f"    \"{cite['excerpt']}\"")
     print(f"\n{'='*60}")
