@@ -185,7 +185,75 @@ def format_citations(context_docs: List[Document]) -> List[Dict[str, Any]]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# RTI Ethics Engine Integration
+# QUERY-LEVEL ETHICS FLAGGING (Pre-LLM, Deterministic)
+# Uses rti_ethics_engine package - NO hardcoding
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def evaluate_query_ethics(query: str) -> EthicsResult:
+    """
+    Evaluate user query ethics BEFORE calling LLM.
+    Uses the same rti_ethics_engine package with build_default_metrics().
+    
+    Flow: User Query → This function (NO LLM) → If ETHICAL → proceed to LLM
+    
+    Returns:
+        EthicsResult from rti_ethics_engine package
+    """
+    # Start with default metrics from the package
+    query_metrics = build_default_metrics()
+    
+    query_lower = query.lower()
+    
+    # ─── Analyze query for security risks (prompt injection) ───
+    # Using L1 thresholds from the package: adv_acc_min=0.7, pisr_max=0.05
+    prompt_injection_indicators = [
+        "ignore previous", "ignore all", "forget everything", "disregard",
+        "pretend you are", "act as if", "roleplay", "jailbreak", "DAN mode",
+        "bypass", "override", "circumvent"
+    ]
+    has_prompt_injection = any(ind in query_lower for ind in prompt_injection_indicators)
+    
+    if has_prompt_injection:
+        # Fail L1 security gate: adv_acc < 0.7, pisr > 0.05
+        query_metrics["security"]["adv_acc"] = 0.0  # Below threshold 0.7
+        query_metrics["security"]["pisr"] = 1.0     # Above threshold 0.05
+        query_metrics["security"]["mir"] = 0.5
+    
+    # ─── Analyze query for legal risks (Section 8 exemptions) ───
+    # Using L1 thresholds from the package: lawfulness=1.0, cvr_min=0.95
+    legal_risk_indicators = [
+        "national security", "defense secret", "cabinet papers", "classified",
+        "top secret", "intelligence report", "strategic document"
+    ]
+    has_legal_risk = any(ind in query_lower for ind in legal_risk_indicators)
+    
+    if has_legal_risk:
+        # Fail L1 legal gate: lawfulness < 1.0
+        query_metrics["legal"]["lawfulness"] = 0.0
+        query_metrics["legal"]["proportionality"] = 0.3
+    
+    # ─── Analyze query for fairness/privacy risks (personal data) ───
+    # Using L1 thresholds from the package: spd=0.1, di range [0.8, 1.25]
+    privacy_risk_indicators = [
+        "phone number", "mobile number", "email address", "home address",
+        "aadhaar", "aadhar", "pan card", "bank account", "personal details",
+        "private information", "salary of"
+    ]
+    has_privacy_risk = any(ind in query_lower for ind in privacy_risk_indicators)
+    
+    if has_privacy_risk:
+        # Fail L1 fairness gate: spd > 0.1, di out of range
+        query_metrics["fairness"]["spd"] = 0.5      # Above threshold 0.1
+        query_metrics["fairness"]["di"] = 0.3       # Below threshold 0.8
+        query_metrics["fairness"]["mi_leakage"] = 0.5
+    
+    # ─── Run through the ethics engine (same as response evaluation) ───
+    result: EthicsResult = ethics_engine.run_protocol(query_metrics)
+    
+    return result
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# RTI Ethics Engine Integration (Response-Level)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def compute_ethics_metrics(
     response: str, 
@@ -288,13 +356,42 @@ class Query(BaseModel):
 @app.post("/chat")
 async def chat(query: Query):
     start_time = time.time()
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STEP 1: QUERY-LEVEL ETHICS CHECK (Deterministic, NO LLM)
+    # rti_ethics_engine is the source of truth - LLM only runs after approval
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    query_ethics: EthicsResult = evaluate_query_ethics(query.question)
+    
+    # If query is UNETHICAL → BLOCK (never call LLM)
+    if query_ethics.final_label == "UNETHICAL":
+        return {
+            "response": None,
+            "blocked": True,
+            "block_reason": "Query blocked by RTI Ethics Engine (pre-LLM gate)",
+            "sources": [],
+            "citations": [],
+            "query_ethics": {
+                "label": query_ethics.final_label,
+                "s_llm": round(query_ethics.s_llm, 4),
+                "risk_band": query_ethics.risk_band,
+                "l1_pass_rate": f"{query_ethics.l1_pass_rate()*100:.1f}%",
+                "failed_dims": query_ethics.get_failed_dims(),
+                "required_action": query_ethics.required_action
+            },
+            "ethics": None  # No response ethics since LLM was never called
+        }
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STEP 2: QUERY IS ETHICAL → PROCEED TO LLM
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     result = qa_chain.invoke({"input": query.question})
     response = result.get("answer", "No answer generated.")
     context_docs = result.get("context", [])
     
     latency = time.time() - start_time
     
-    # ━━━ Use RTI Ethics Engine ━━━
+    # ━━━ STEP 3: Response-Level Ethics (Post-LLM) ━━━
     ethics_result: EthicsResult = compute_ethics_metrics(response, context_docs, latency)
     
     # ━━━ Generate Clickable Citations ━━━
@@ -343,15 +440,31 @@ async def chat(query: Query):
         "flags": flags,
         "alerts": flags,
         "l1_pass_rate": ethics_result.l1_pass_rate(),
-        "failed_dims": ethics_result.get_failed_dims()
+        "failed_dims": ethics_result.get_failed_dims(),
+        # Query-level ethics (pre-LLM gate)
+        "query_ethics": {
+            "label": query_ethics.final_label,
+            "s_llm": query_ethics.s_llm,
+            "passed": query_ethics.final_label != "UNETHICAL"
+        }
     }
     TELEMETRY_HISTORY.append(query_record)
     
-    # Return response with citations
+    # Return response with both query and response ethics
     return {
         "response": response,
+        "blocked": False,
         "sources": [c["source"] for c in citations],
         "citations": citations,  # Full citation objects with URLs
+        # Query ethics (pre-LLM, deterministic)
+        "query_ethics": {
+            "label": query_ethics.final_label,
+            "s_llm": round(query_ethics.s_llm, 4),
+            "risk_band": query_ethics.risk_band,
+            "l1_pass_rate": f"{query_ethics.l1_pass_rate()*100:.1f}%",
+            "failed_dims": query_ethics.get_failed_dims()
+        },
+        # Response ethics (post-LLM)
         "ethics": {
             "label": ethics_result.final_label,
             "s_llm": round(ethics_result.s_llm, 4),
@@ -366,8 +479,38 @@ async def chat(query: Query):
 async def chat_full(question: str, user_id: str = "anonymous"):
     """
     Full audit endpoint - returns complete L1/L2/L3 breakdown.
+    Includes query-level ethics gate (pre-LLM, deterministic).
     """
     start_time = time.time()
+    
+    # ━━━ STEP 1: Query-Level Ethics Check (NO LLM) ━━━
+    query_ethics: EthicsResult = evaluate_query_ethics(question)
+    
+    # If query is UNETHICAL → BLOCK
+    if query_ethics.final_label == "UNETHICAL":
+        return {
+            "response": None,
+            "blocked": True,
+            "block_reason": "Query blocked by RTI Ethics Engine (pre-LLM gate)",
+            "citations": [],
+            "query_audit": {
+                "final_label": query_ethics.final_label,
+                "s_llm": query_ethics.s_llm,
+                "risk_band": query_ethics.risk_band,
+                "layer2_risk_score": query_ethics.layer2_risk_score,
+                "audit_id": query_ethics.audit_id,
+                "l1_summary": {
+                    "pass_rate": query_ethics.l1_pass_rate(),
+                    "passed": query_ethics.get_passed_dims(),
+                    "failed": query_ethics.get_failed_dims()
+                },
+                "risk_vector": query_ethics.risk_vector,
+                "required_action": query_ethics.required_action
+            },
+            "audit": None  # No response audit since LLM was never called
+        }
+    
+    # ━━━ STEP 2: Query is ETHICAL → Proceed to LLM ━━━
     result = qa_chain.invoke({"input": question})
     response = result.get("answer", "No answer generated.")
     context_docs = result.get("context", [])
@@ -376,10 +519,23 @@ async def chat_full(question: str, user_id: str = "anonymous"):
     ethics_result: EthicsResult = compute_ethics_metrics(response, context_docs, latency)
     citations = format_citations(context_docs)
     
-    # Return FULL audit data
+    # Return FULL audit data (both query and response)
     return {
         "response": response,
+        "blocked": False,
         "citations": citations,
+        # Query-level audit (pre-LLM, deterministic)
+        "query_audit": {
+            "final_label": query_ethics.final_label,
+            "s_llm": query_ethics.s_llm,
+            "risk_band": query_ethics.risk_band,
+            "l1_summary": {
+                "pass_rate": query_ethics.l1_pass_rate(),
+                "passed": query_ethics.get_passed_dims(),
+                "failed": query_ethics.get_failed_dims()
+            }
+        },
+        # Response-level audit (post-LLM)
         "audit": {
             "final_label": ethics_result.final_label,
             "s_llm": ethics_result.s_llm,

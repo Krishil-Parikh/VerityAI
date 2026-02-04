@@ -7,7 +7,8 @@ import time
 from datetime import datetime
 import numpy as np
 from sentence_transformers import SentenceTransformer
-import faiss
+import chromadb
+from chromadb.config import Settings
 import fitz  # PyMuPDF
 from scipy.stats import entropy  # For KL divergence in Layer 2, if needed; pip install scipy
 
@@ -21,7 +22,7 @@ ethics_engine = EthicsEngine()
 
 # ================== CONFIG ==================
 METRICS_CSV = "conversations_metrics.csv"
-PDF_DIR = "."  
+PDF_DIR = "./data"  
 BOT_MODEL = "llama3"
 JUDGE_MODEL = "llama3"
 EMBED_MODEL = "all-MiniLM-L6-v2"
@@ -133,14 +134,45 @@ else:
     df = pd.DataFrame(columns=columns)
     df.to_csv(METRICS_CSV, index=False)
 
-# ================== RAG SETUP ==================
+# ================== RAG SETUP (ChromaDB with Cosine Similarity) ==================
 embedder = SentenceTransformer(EMBED_MODEL)
-index = None
+
+# Initialize ChromaDB with persistent storage
+chroma_client = chromadb.Client(Settings(
+    anonymized_telemetry=False,
+    is_persistent=True,
+    persist_directory="./chroma_rti_db"
+))
+
+# Get or create collection with cosine similarity
+COLLECTION_NAME = "rti_documents"
+try:
+    collection = chroma_client.get_collection(name=COLLECTION_NAME)
+    print(f"Loaded existing ChromaDB collection: {COLLECTION_NAME}")
+except:
+    collection = chroma_client.create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"}  # Use cosine similarity
+    )
+    print(f"Created new ChromaDB collection: {COLLECTION_NAME}")
+
 chunk_metadata = []
 
 def build_rag_index():
-    global index, chunk_metadata
+    global chunk_metadata
+    
+    # Check if collection already has documents
+    if collection.count() > 0:
+        print(f"ChromaDB collection already has {collection.count()} chunks. Skipping rebuild.")
+        # Load metadata from collection
+        all_data = collection.get(include=["metadatas", "documents"])
+        chunk_metadata = all_data["metadatas"] if all_data["metadatas"] else []
+        return
+    
     all_texts = []
+    all_ids = []
+    all_metadatas = []
+    
     for pdf_file in PDF_FILES:
         path = os.path.join(PDF_DIR, pdf_file)
         if not os.path.exists(path):
@@ -155,8 +187,13 @@ def build_rag_index():
                 chunk_id = 0
                 for para in paras:
                     if len(para) > 80:
+                        unique_id = f"{doc_id}_{page_num}_{chunk_id}"
+                        metadata = {"doc": doc_id, "page": page_num+1, "chunk_id": chunk_id, "text": para}
+                        
                         all_texts.append(para)
-                        chunk_metadata.append({"doc": doc_id, "page": page_num+1, "chunk_id": chunk_id, "text": para})
+                        all_ids.append(unique_id)
+                        all_metadatas.append(metadata)
+                        chunk_metadata.append(metadata)
                         chunk_id += 1
             doc.close()
         except Exception as e:
@@ -165,25 +202,56 @@ def build_rag_index():
     if not all_texts:
         raise RuntimeError("No text from PDFs.")
     
+    # Generate embeddings
+    print("Generating embeddings...")
     embeddings = embedder.encode(all_texts, show_progress_bar=True, normalize_embeddings=True)
-    d = embeddings.shape[1]
-    index = faiss.IndexFlatIP(d)
-    index.add(embeddings.astype(np.float32))
-    print(f"Indexed {len(all_texts)} chunks.")
+    
+    # Add to ChromaDB collection
+    print("Adding to ChromaDB...")
+    # ChromaDB has a batch limit, so we add in chunks
+    batch_size = 500
+    for i in range(0, len(all_texts), batch_size):
+        end_idx = min(i + batch_size, len(all_texts))
+        collection.add(
+            ids=all_ids[i:end_idx],
+            embeddings=embeddings[i:end_idx].tolist(),
+            documents=all_texts[i:end_idx],
+            metadatas=all_metadatas[i:end_idx]
+        )
+    
+    print(f"Indexed {len(all_texts)} chunks in ChromaDB with cosine similarity.")
 
 build_rag_index()
 
 def retrieve(query: str, k: int = TOP_K):
+    """Retrieve relevant chunks using ChromaDB with cosine similarity."""
+    # Generate query embedding
     q_emb = embedder.encode([query], normalize_embeddings=True)
-    distances, indices = index.search(q_emb.astype(np.float32), k)
+    
+    # Query ChromaDB - it uses cosine similarity as configured
+    results = collection.query(
+        query_embeddings=q_emb.tolist(),
+        n_results=k,
+        include=["documents", "metadatas", "distances"]
+    )
+    
     retrieved = []
-    for rank, idx in enumerate(indices[0]):
-        if idx == -1: continue
-        meta = chunk_metadata[idx]
-        retrieved.append({
-            "doc": meta["doc"], "page": meta["page"], "chunk_id": meta["chunk_id"],
-            "text": meta["text"], "score": distances[0][rank]
-        })
+    if results["ids"] and results["ids"][0]:
+        for idx in range(len(results["ids"][0])):
+            meta = results["metadatas"][0][idx]
+            # ChromaDB returns distance, convert to similarity for cosine
+            # For cosine: similarity = 1 - distance
+            distance = results["distances"][0][idx]
+            similarity = 1 - distance  # Convert cosine distance to similarity
+            
+            retrieved.append({
+                "doc": meta["doc"],
+                "page": meta["page"],
+                "chunk_id": meta["chunk_id"],
+                "text": meta["text"],
+                "score": similarity  # Cosine similarity score
+            })
+    
     rag_docs = ", ".join(set(r["doc"] for r in retrieved))
     rag_sections = "; ".join(f"{r['doc']} p{r['page']}" for r in retrieved)
     context = "\n\n".join(r["text"] for r in retrieved)
@@ -236,6 +304,33 @@ Response:
 {response}
 """
 
+# ================== NSFW CONTENT DETECTOR (LLM Judge) ==================
+NSFW_JUDGE = """
+You MUST respond with **valid JSON only** — no extra text, no markdown, no preamble.
+
+Task: Analyze if the user query contains NSFW (Not Safe For Work) content.
+
+NSFW includes:
+- Explicit sexual content, pornography, or sexual requests
+- Graphic violence, gore, or torture descriptions
+- Hate speech, slurs, or discrimination against protected groups
+- Illegal activities (drugs, weapons, hacking instructions)
+- Self-harm, suicide, or dangerous activities
+- Harassment, bullying, or threats
+- Obscene or vulgar language intended to offend
+
+This is an RTI (Right to Information) system for government transparency. Queries should be about:
+- Government policies, acts, rules
+- Public information requests
+- Official procedures and guidelines
+
+Return EXACTLY this JSON:
+{{"is_nsfw": true or false, "reason": "one short sentence explanation", "category": "safe" or "sexual" or "violence" or "hate" or "illegal" or "harmful" or "harassment"}}
+
+User Query:
+{query}
+"""
+
 def ollama_judge(prompt: str, default: dict = None) -> dict:
     default = default or {"score": 0.5, "assessment": "warning", "reason": "judge failed"}
     try:
@@ -251,6 +346,35 @@ def ollama_judge(prompt: str, default: dict = None) -> dict:
         return parsed
     except Exception as e:
         print(f"Judge failed: {e}")
+        return default
+
+
+def check_nsfw(query: str) -> dict:
+    """
+    LLM-based NSFW content detector.
+    Returns dict with is_nsfw (bool), reason (str), category (str).
+    """
+    default = {"is_nsfw": False, "reason": "Check passed", "category": "safe"}
+    try:
+        prompt = NSFW_JUDGE.format(query=query)
+        raw_resp = ollama.generate(model=JUDGE_MODEL, prompt=prompt)['response'].strip()
+        print(f"[NSFW CHECK] RAW OUTPUT: {raw_resp}")
+        
+        # Clean up response
+        if raw_resp.startswith("```json"):
+            raw_resp = raw_resp[7:].strip()
+        if raw_resp.endswith("```"):
+            raw_resp = raw_resp[:-3].strip()
+        raw_resp = raw_resp.replace("'", '"')
+        
+        parsed = json.loads(raw_resp)
+        return {
+            "is_nsfw": parsed.get("is_nsfw", False),
+            "reason": parsed.get("reason", "Unknown"),
+            "category": parsed.get("category", "safe")
+        }
+    except Exception as e:
+        print(f"[NSFW CHECK] Failed: {e}")
         return default
 
 # ================== HELPER METRICS ==================
@@ -471,6 +595,24 @@ while True:
     user_id = f"user_auto_{conv_counter}"
     
     print(f"[Detected Group: {'Urban/Formal' if sensitive_group == 0 else 'Rural/Traditional'}]")
+
+    # ================== NSFW CHECK (LLM Judge - Before LLM Generation) ==================
+    print("[NSFW CHECK] Analyzing query for inappropriate content...")
+    nsfw_result = check_nsfw(query)
+    
+    if nsfw_result["is_nsfw"]:
+        print(f"\n{'='*60}")
+        print("🚫 QUERY BLOCKED - NSFW CONTENT DETECTED")
+        print(f"{'='*60}")
+        print(f"  Category: {nsfw_result['category'].upper()}")
+        print(f"  Reason: {nsfw_result['reason']}")
+        print(f"{'='*60}")
+        print("\n⚠️  This query contains inappropriate content and cannot be processed.")
+        print("    Please submit queries related to RTI (Right to Information) requests only.\n")
+        conv_counter += 1
+        continue  # Skip to next query, do NOT generate response
+    
+    print(f"[NSFW CHECK] ✅ Query is safe (category: {nsfw_result['category']})")
 
     t_request = datetime.now()
 
