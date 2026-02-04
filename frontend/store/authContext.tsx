@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { User, UserRole } from '@/types';
 
 interface AuthContextType {
@@ -13,9 +13,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_STORAGE_KEY = 'rti_auth_user';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start with loading true
+
+  // Load user from localStorage on mount
+  useEffect(() => {
+    try {
+      const storedUser = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error('Error loading auth from storage:', error);
+    }
+    setLoading(false);
+  }, []);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -23,19 +38,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Hard-coded credentials
+    let loggedInUser: User | null = null;
     if (email === 'citizen@example.com' && password === 'password') {
-      setUser({ email, role: 'citizen' });
+      loggedInUser = { email, role: 'citizen' };
     } else if (email === 'admin@example.com' && password === 'password') {
-      setUser({ email, role: 'admin' });
+      loggedInUser = { email, role: 'admin' };
     } else {
+      setLoading(false);
       throw new Error('Invalid credentials');
     }
 
+    setUser(loggedInUser);
+    // Persist to localStorage
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInUser));
     setLoading(false);
   };
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
   return (
@@ -60,3 +81,4 @@ export function useAuth() {
   }
   return context;
 }
+

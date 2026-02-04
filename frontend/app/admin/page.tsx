@@ -7,22 +7,40 @@ import { TrafficLightStream } from '@/components/admin/TrafficLightStream';
 import { SimpleChart } from '@/components/admin/SimpleChart';
 import { MetricsRadarCard } from '@/components/admin/MetricsRadarCard';
 import { conversationStore } from '@/store/conversationStore';
+import { metricsStore } from '@/store/metricsStore';
 
 export default function AdminPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [, forceUpdate] = useState({});
 
   // Subscribe to conversation updates from store
   useEffect(() => {
-    // Initial load
-    setConversations(conversationStore.getConversations());
+    // Load historical conversations and metrics from backend
+    const loadData = async () => {
+      await Promise.all([
+        conversationStore.loadConversations(),
+        metricsStore.loadHistory()
+      ]);
+      setConversations(conversationStore.getConversations());
+      forceUpdate({}); // Trigger re-render to update metrics-dependent components
+    };
+    
+    loadData();
 
     // Subscribe to updates
-    const unsubscribe = conversationStore.subscribe(() => {
+    const unsubscribeConv = conversationStore.subscribe(() => {
       setConversations(conversationStore.getConversations());
     });
+    
+    const unsubscribeMetrics = metricsStore.subscribe(() => {
+      forceUpdate({});
+    });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeConv();
+      unsubscribeMetrics();
+    };
   }, []);
 
   return (

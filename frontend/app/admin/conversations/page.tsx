@@ -20,7 +20,13 @@ export default function ConversationsPage() {
 
   // Subscribe to conversation updates
   useEffect(() => {
-    setConversations(conversationStore.getConversations());
+    // Load historical conversations from backend
+    const loadData = async () => {
+      await conversationStore.loadConversations();
+      setConversations(conversationStore.getConversations());
+    };
+    
+    loadData();
 
     const unsubscribe = conversationStore.subscribe(() => {
       setConversations(conversationStore.getConversations());

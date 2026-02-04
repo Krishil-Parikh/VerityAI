@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatNumber } from '@/lib/formatters';
 import { BarChart3, AlertTriangle, Clock, TrendingUp } from 'lucide-react';
+import { metricsStore } from '@/store/metricsStore';
 
 interface OverviewCardsProps {
     conversations: Conversation[];
@@ -22,7 +23,12 @@ export function OverviewCards({ conversations }: OverviewCardsProps) {
     const flaggedCount = conversations.filter(
         (c) => c.status !== 'safe'
     ).length;
-    const avgResponseTime = 1.2; // Dummy value in seconds
+    
+    // Calculate average response time from metrics history
+    const metricsHistory = metricsStore.getMetricsHistory();
+    const avgResponseTime = metricsHistory.length > 0
+        ? metricsHistory.reduce((sum, m) => sum + (m.tokens?.latency_ms || 0), 0) / metricsHistory.length / 1000
+        : 0; // Convert ms to seconds
 
     const getScoreBadge = (score: number) => {
         if (score >= 85) return 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300';

@@ -290,16 +290,16 @@ async def process_query(request: QueryRequest):
         }
         pd.DataFrame([row]).to_csv(METRICS_CSV, mode='a', header=False, index=False)
         
-        # Build all dimension scores with small jitter for visual variance
-        import random
+        # Build all dimension scores with small jitter for visual variance as requested
         dimensions = {}
         for dim_key in DIMENSION_WEIGHTS.keys():
             dim_result = result.get_dim_result(dim_key)
             if dim_result:
                 # Add small jitter to make scores more dynamic (±2-5 points)
+                # Dimensions: Legal, Fairness, Explainability, Security, Monitoring, Performance, Drift, Environmental
                 base_score = 100 * (1 - dim_result.l2_risk)
-                jitter = random.uniform(-3, 3)  # ±3 points jitter
-                jittered_score = max(0, min(100, base_score + jitter))  # Clamp 0-100
+                jitter = random.uniform(-3, 3) 
+                jittered_score = max(0, min(100, base_score + jitter))
                 
                 dimensions[dim_key] = {
                     "name": dim_result.name,
@@ -384,7 +384,10 @@ async def get_history(limit: int = 100):
         if not os.path.exists(FULL_RESPONSE_CSV):
             return {"success": True, "history": [], "count": 0}
         
-        df = pd.read_csv(FULL_RESPONSE_CSV)
+        try:
+            df = pd.read_csv(FULL_RESPONSE_CSV, on_bad_lines='skip', engine='python')
+        except TypeError:
+            df = pd.read_csv(FULL_RESPONSE_CSV, error_bad_lines=False, warn_bad_lines=False, engine='python')
         
         if df.empty:
             return {"success": True, "history": [], "count": 0}
@@ -423,8 +426,13 @@ async def get_conversations_history(limit: int = 50):
         if not os.path.exists(METRICS_CSV):
             return {"success": True, "conversations": [], "count": 0}
         
-        # Use on_bad_lines='skip' to handle malformed CSV rows
-        df = pd.read_csv(METRICS_CSV, on_bad_lines='skip')
+        # Robust CSV reading: engine='python' is slower but better at handling bad lines
+        # error_bad_lines=False is for older pandas versions, on_bad_lines='skip' for newer
+        try:
+            df = pd.read_csv(METRICS_CSV, on_bad_lines='skip', engine='python')
+        except TypeError:
+            # Fallback for older pandas versions
+            df = pd.read_csv(METRICS_CSV, error_bad_lines=False, warn_bad_lines=False, engine='python')
         
         if df.empty:
             return {"success": True, "conversations": [], "count": 0}

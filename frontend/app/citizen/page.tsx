@@ -19,15 +19,15 @@ export default function CitizenPage() {
     return unsubscribe;
   }, []);
 
-  const handleSendMessage = useCallback(async (message: string) => {
+  const handleSendMessage = useCallback(async (message: string, model: string = 'llama3') => {
     // Create new conversation if none exists
     if (!conversation) {
       const newConv = conversationStore.createConversation('current-citizen', message);
       setConversation(newConv);
       setIsLoading(true);
 
-      // Simulate AI response
-      const response = await conversationStore.addAIResponse(newConv.id);
+      // Get AI response with selected model
+      const response = await conversationStore.addAIResponse(newConv.id, model);
       if (response) {
         setConversation(response);
       }
@@ -49,8 +49,8 @@ export default function CitizenPage() {
 
       setIsLoading(true);
 
-      // Simulate AI response
-      const response = await conversationStore.addAIResponse(conversation.id);
+      // Get AI response with selected model
+      const response = await conversationStore.addAIResponse(conversation.id, model);
       if (response) {
         setConversation(response);
       }
