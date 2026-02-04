@@ -22,7 +22,7 @@ export function AppTopbar() {
           <div className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
             GovAudit AI
           </div>
-          <span className="text-sm text-muted-foreground border-l border-border pl-3">RTI Portal</span>
+          {/* <span className="text-sm text-muted-foreground border-l border-border pl-3">RTI Portal</span> */}
         </div>
 
         <div className="flex items-center gap-4">

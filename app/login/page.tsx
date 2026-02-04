@@ -38,14 +38,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 px-4">
-      <Card className="w-full max-w-md border-0 shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-md border shadow-lg">
         <div className="p-8">
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-blue-600 mb-2">
+            <h1 className="text-3xl font-bold text-foreground mb-2">
               GovAudit AI
             </h1>
-            <p className="text-slate-600">RTI Information Portal</p>
+            <p className="text-muted-foreground">RTI Information Portal</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -83,7 +83,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-700">
+              <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-destructive">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <p className="text-sm">{error}</p>
               </div>
@@ -92,7 +92,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              className="w-full"
             >
               {isLoading ? (
                 <>
@@ -105,9 +105,9 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 space-y-3 text-sm text-slate-600">
+          <div className="mt-6 space-y-3 text-sm text-muted-foreground">
             <div className="border-t pt-4">
-              <p className="font-medium text-slate-900 mb-2">Demo Credentials:</p>
+              <p className="font-medium text-foreground mb-2">Demo Credentials:</p>
               <div className="space-y-2 text-xs">
                 <div>
                   <p className="font-medium">Citizen:</p>

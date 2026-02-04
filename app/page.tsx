@@ -269,8 +269,8 @@ export default function Home() {
             {/* Feature grid */}
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border bg-card p-6 shadow-sm hover:shadow-lg transition-all group">
-                <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Database className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                  <Database className="w-6 h-6 text-primary" />
                 </div>
                 <h3 className="text-sm font-semibold mb-2">
                   Closed‑data only
@@ -283,8 +283,8 @@ export default function Home() {
               </div>
 
               <div className="rounded-2xl border bg-card p-6 shadow-sm hover:shadow-lg transition-all group">
-                <div className="w-12 h-12 rounded-lg bg-green-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Eye className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                  <Eye className="w-6 h-6 text-primary" />
                 </div>
                 <h3 className="text-sm font-semibold mb-2">
                   Output‑level observability
@@ -297,8 +297,8 @@ export default function Home() {
               </div>
 
               <div className="rounded-2xl border bg-card p-6 shadow-sm hover:shadow-lg transition-all group">
-                <div className="w-12 h-12 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Users className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                  <Users className="w-6 h-6 text-primary" />
                 </div>
                 <h3 className="text-sm font-semibold mb-2">
                   Department‑agnostic
@@ -311,8 +311,8 @@ export default function Home() {
               </div>
 
               <div className="rounded-2xl border bg-card p-6 shadow-sm hover:shadow-lg transition-all group">
-                <div className="w-12 h-12 rounded-lg bg-orange-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <FileText className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                  <FileText className="w-6 h-6 text-primary" />
                 </div>
                 <h3 className="text-sm font-semibold mb-2">
                   Evidence, not opinion
@@ -362,67 +362,49 @@ export default function Home() {
                   icon: Scale,
                   title: 'Bias & Fairness',
                   description: 'Tracks statistical parity, refusal‑rate gaps and tone neutrality across demographic variants to surface hidden bias in AI‑assisted replies.',
-                  color: 'blue'
                 },
                 {
                   icon: Database,
                   title: 'Data Grounding & Drift',
                   description: 'Measures how tightly answers stick to retrieved RTI documents, and whether topics drift away from the approved knowledge base over time.',
-                  color: 'green'
                 },
                 {
                   icon: Eye,
                   title: 'Explainability & Transparency',
                   description: 'Scores citation coverage, source diversity and confidence proxies so officers can see why an answer was generated.',
-                  color: 'purple'
                 },
                 {
                   icon: ShieldCheck,
                   title: 'Legal & Regulatory Compliance',
                   description: 'Lawfulness assessments, PII disclosure rates and exemption checks aligned with RTI disclosure rules and privacy law.',
-                  color: 'red'
                 },
                 {
                   icon: Lock,
                   title: 'Security & Adversarial Robustness',
                   description: 'Stress‑tests responses to jailbreaks and harmful prompts, monitoring adversarial refusal rate and leakage risk.',
-                  color: 'orange'
                 },
                 {
                   icon: BarChart3,
                   title: 'Response Quality & Performance',
                   description: 'Evaluates accuracy, task completion, timeliness and consistency so departments know if AI is actually helping citizens.',
-                  color: 'indigo'
                 },
                 {
                   icon: Users,
                   title: 'Human Control & Oversight',
                   description: 'Tracks manual overrides, escalation coverage and review activity to keep humans in the loop for sensitive answers.',
-                  color: 'pink'
                 },
                 {
                   icon: TrendingUp,
                   title: 'Monitoring & Cost',
                   description: 'Brings latency, error rates, inference cost and uptime into the same view as ethics, for a complete operational picture.',
-                  color: 'teal'
                 }
               ].map((dimension, i) => {
                 const Icon = dimension.icon;
-                const colorMap = {
-                  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-                  green: 'bg-green-500/10 text-green-600 dark:text-green-400',
-                  purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-                  red: 'bg-red-500/10 text-red-600 dark:text-red-400',
-                  orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-                  indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-                  pink: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
-                  teal: 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
-                };
 
                 return (
                   <div key={i} className="rounded-2xl border bg-card p-6 hover:shadow-lg transition-all group">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-                      <Icon className="w-6 h-6" />
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                      <Icon className="w-6 h-6 text-primary" />
                     </div>
                     <h3 className="text-base font-semibold mb-2">
                       {dimension.title}
@@ -501,8 +483,8 @@ export default function Home() {
               <div className="rounded-2xl border bg-card p-8 shadow-xl">
                 <div className="space-y-6">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                      <Zap className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Zap className="w-6 h-6 text-primary" />
                     </div>
                     <h3 className="text-lg font-semibold">
                       AWS‑ready deployment
