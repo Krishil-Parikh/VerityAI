@@ -27,10 +27,10 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
       {messages.length === 0 ? (
         <div className="flex h-full items-center justify-center">
           <div className="text-center">
-            <p className="text-lg font-medium text-slate-900 mb-2">
+            <p className="text-lg font-medium text-foreground mb-2">
               Welcome to GovAudit RTI Portal
             </p>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               Ask a question to get started
             </p>
           </div>
@@ -43,10 +43,10 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
 
           {isLoading && (
             <div className="flex justify-start mb-4">
-              <div className="rounded-lg bg-slate-100 px-4 py-3">
+              <div className="rounded-lg bg-muted px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                  <span className="text-sm text-slate-600">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span className="text-sm text-muted-foreground">
                     Evaluating response...
                   </span>
                 </div>

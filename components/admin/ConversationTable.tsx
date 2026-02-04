@@ -18,48 +18,48 @@ export function ConversationTable({
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case 'safe':
-        return 'bg-green-100 text-green-900';
+        return 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300';
       case 'needs_review':
-        return 'bg-yellow-100 text-yellow-900';
+        return 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-300';
       case 'violation':
-        return 'bg-red-100 text-red-900';
+        return 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-300';
       case 'evaluating':
-        return 'bg-slate-200 text-slate-700 animate-pulse';
+        return 'bg-muted text-muted-foreground animate-pulse';
       default:
-        return 'bg-slate-100 text-slate-900';
+        return 'bg-muted text-foreground';
     }
   };
 
   const getScoreBadgeColor = (score: number) => {
-    if (score >= 85) return 'text-green-600 bg-green-50';
-    if (score >= 70) return 'text-yellow-600 bg-yellow-50';
-    return 'text-red-600 bg-red-50';
+    if (score >= 85) return 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950/30';
+    if (score >= 70) return 'text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950/30';
+    return 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950/30';
   };
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-slate-200">
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+          <tr className="border-b border-border">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Conversation ID
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Citizen ID
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Question
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Ethical Score
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Status
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Date/Time
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">
               Action
             </th>
           </tr>
@@ -68,15 +68,15 @@ export function ConversationTable({
           {conversations.map((conv) => (
             <tr
               key={conv.id}
-              className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+              className="border-b border-border hover:bg-accent/50 transition-colors"
             >
-              <td className="px-4 py-3 text-sm text-slate-900 font-mono">
+              <td className="px-4 py-3 text-sm text-foreground font-mono">
                 {conv.id.substring(0, 8)}...
               </td>
-              <td className="px-4 py-3 text-sm text-slate-900">
+              <td className="px-4 py-3 text-sm text-foreground">
                 {conv.citizenId}
               </td>
-              <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
+              <td className="px-4 py-3 text-sm text-muted-foreground max-w-xs truncate">
                 {truncateText(
                   conv.messages[0]?.content || 'No content',
                   50
@@ -100,7 +100,7 @@ export function ConversationTable({
                   {getStatusLabel(conv.status)}
                 </Badge>
               </td>
-              <td className="px-4 py-3 text-sm text-slate-600">
+              <td className="px-4 py-3 text-sm text-muted-foreground">
                 {formatDate(conv.createdAt)}
               </td>
               <td className="px-4 py-3">

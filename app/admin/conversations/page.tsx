@@ -53,10 +53,10 @@ export default function ConversationsPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">
+        <h1 className="text-3xl font-bold text-foreground">
           Conversations
         </h1>
-        <p className="text-slate-600 mt-1">
+        <p className="text-muted-foreground mt-1">
           View and audit all citizen-assistant conversations
         </p>
       </div>
@@ -65,9 +65,9 @@ export default function ConversationsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <Card className="border-slate-200 overflow-hidden">
+          <Card className="border-border overflow-hidden">
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">
+              <h2 className="text-lg font-semibold text-foreground mb-4">
                 All Conversations ({filteredConversations.length})
               </h2>
               <ConversationTable

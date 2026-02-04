@@ -30,8 +30,8 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
   return (
     <div className="space-y-6">
       {/* Dimension Weighting */}
-      <Card className="border-slate-200 p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">
+      <Card className="border-border p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
           Dimension Weighting
         </h3>
         <div className="space-y-4">
@@ -47,10 +47,10 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
           ].map((dimension, i) => (
             <div key={dimension}>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-slate-700">
+                <label className="text-sm font-medium text-muted-foreground">
                   {dimension}
                 </label>
-                <span className="text-sm font-semibold text-slate-900">
+                <span className="text-sm font-semibold text-foreground">
                   {Math.round(12.5)}%
                 </span>
               </div>
@@ -73,13 +73,13 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
       </Card>
 
       {/* Alert Thresholds */}
-      <Card className="border-slate-200 p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">
+      <Card className="border-border p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
           Alert Thresholds
         </h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
+            <label className="block text-sm font-medium text-muted-foreground mb-2">
               Minimum Acceptable Ethical Score
             </label>
             <Input
@@ -90,13 +90,13 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
               onChange={(e) => setMinScore(parseInt(e.target.value))}
               className="w-full"
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Conversations below this score will be flagged for review
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
+            <label className="block text-sm font-medium text-muted-foreground mb-2">
               Red Alert Threshold
             </label>
             <Input
@@ -107,7 +107,7 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
               onChange={(e) => setRedThreshold(parseInt(e.target.value))}
               className="w-full"
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Conversations below this score will be marked as violations
             </p>
           </div>
@@ -118,9 +118,9 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
                 type="checkbox"
                 checked={emailAlerts}
                 onChange={(e) => setEmailAlerts(e.target.checked)}
-                className="rounded"
+                className="rounded border-border bg-background"
               />
-              <span className="text-sm font-medium text-slate-700">
+              <span className="text-sm font-medium text-muted-foreground">
                 Enable Email Alerts
               </span>
             </label>
@@ -129,9 +129,9 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
                 type="checkbox"
                 checked={slackAlerts}
                 onChange={(e) => setSlackAlerts(e.target.checked)}
-                className="rounded"
+                className="rounded border-border bg-background"
               />
-              <span className="text-sm font-medium text-slate-700">
+              <span className="text-sm font-medium text-muted-foreground">
                 Enable Slack Alerts
               </span>
             </label>
@@ -142,7 +142,7 @@ export function SettingsForm({ onSave }: SettingsFormProps) {
       {/* Save Button */}
       <Button
         onClick={handleSave}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2"
+        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
         size="lg"
       >
         <Save className="h-4 w-4" />

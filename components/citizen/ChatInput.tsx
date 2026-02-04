@@ -30,7 +30,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-slate-200 bg-white p-4">
+    <div className="border-t border-border bg-background p-4">
       <div className="flex gap-2">
         <Textarea
           value={message}
@@ -45,12 +45,12 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           onClick={handleSubmit}
           disabled={isLoading || !message.trim()}
           size="lg"
-          className="bg-blue-600 hover:bg-blue-700 text-white h-full"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground h-full"
         >
           <Send className="h-4 w-4" />
         </Button>
       </div>
-      <p className="text-xs text-slate-500 mt-2">
+      <p className="text-xs text-muted-foreground mt-2">
         Ctrl+Enter to send
       </p>
     </div>

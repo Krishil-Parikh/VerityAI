@@ -35,15 +35,15 @@ export function MetricsRadarCard({
   };
 
   const getScoreColor = (score: number): string => {
-    if (score >= 85) return 'text-green-600';
-    if (score >= 70) return 'text-amber-600';
-    return 'text-red-600';
+    if (score >= 85) return 'text-green-600 dark:text-green-500';
+    if (score >= 70) return 'text-yellow-600 dark:text-yellow-500';
+    return 'text-red-600 dark:text-red-500';
   };
 
   const getScoreBgColor = (score: number): string => {
-    if (score >= 85) return 'bg-green-50 border-green-200';
-    if (score >= 70) return 'bg-amber-50 border-amber-200';
-    return 'bg-red-50 border-red-200';
+    if (score >= 85) return 'bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800/30';
+    if (score >= 70) return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20 dark:border-yellow-800/30';
+    return 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800/30';
   };
 
   const getProgressBarColor = (score: number): string => {
@@ -53,16 +53,16 @@ export function MetricsRadarCard({
   };
 
   return (
-    <Card className="border-slate-200">
+    <Card className="border-border">
       <div className="p-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-6">
+        <h2 className="text-lg font-semibold text-foreground mb-6">
           Ethical Dimensions Assessment
         </h2>
 
         {/* Overall Score */}
         <div className="mb-8 flex items-center justify-center">
           <div className="relative h-40 w-40 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border-8 border-slate-100" />
+            <div className="absolute inset-0 rounded-full border-8 border-muted" />
             <div
               className="absolute inset-0 rounded-full border-8 transition-all"
               style={{
@@ -84,7 +84,7 @@ export function MetricsRadarCard({
               >
                 {overallScore}
               </span>
-              <span className="text-xs font-medium text-slate-600 mt-1">
+              <span className="text-xs font-medium text-muted-foreground mt-1">
                 Overall Score
               </span>
             </div>
@@ -103,8 +103,8 @@ export function MetricsRadarCard({
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4 text-slate-600" />
-                    <p className="text-xs font-medium text-slate-700 leading-tight">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-xs font-medium text-foreground leading-tight">
                       {dim.name.split('&')[0]}
                     </p>
                   </div>
@@ -115,14 +115,14 @@ export function MetricsRadarCard({
                   </span>
                 </div>
 
-                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                   <div
                     className={`h-full ${getProgressBarColor(dim.score)} transition-all`}
                     style={{ width: `${dim.score}%` }}
                   />
                 </div>
 
-                <p className="text-xs text-slate-500 mt-2 capitalize">
+                <p className="text-xs text-muted-foreground mt-2 capitalize">
                   {dim.status}
                 </p>
               </div>

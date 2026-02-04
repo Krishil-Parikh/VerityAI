@@ -63,7 +63,7 @@ export default function CitizenPage() {
       {/* Main chat area */}
       <div className="flex flex-1 gap-4 overflow-hidden">
         {/* Chat window */}
-        <div className="flex-1 flex flex-col bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="flex-1 flex flex-col bg-card rounded-lg border border-border overflow-hidden">
           <ChatWindow
             messages={conversation?.messages || []}
             isLoading={isLoading}

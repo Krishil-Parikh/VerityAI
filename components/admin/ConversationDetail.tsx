@@ -33,14 +33,14 @@ export function ConversationDetail({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-end">
-      <div className="bg-white w-full max-w-2xl h-full overflow-y-auto">
+      <div className="bg-background w-full max-w-2xl h-full overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between">
+        <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">
+            <h2 className="text-xl font-bold text-foreground">
               Conversation Details
             </h2>
-            <p className="text-sm text-slate-600 mt-1">{conversation.id}</p>
+            <p className="text-sm text-muted-foreground mt-1">{conversation.id}</p>
           </div>
           <Button
             variant="ghost"
@@ -55,17 +55,17 @@ export function ConversationDetail({
         <div className="p-6 space-y-6">
           {/* Metadata */}
           <div className="grid grid-cols-2 gap-4">
-            <Card className="border-slate-200 p-4">
-              <p className="text-xs font-medium text-slate-500 uppercase">User ID</p>
-              <p className="text-sm font-semibold text-slate-900 mt-1">
+            <Card className="border-border p-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase">User ID</p>
+              <p className="text-sm font-semibold text-foreground mt-1">
                 {conversation.citizenId}
               </p>
             </Card>
-            <Card className="border-slate-200 p-4">
-              <p className="text-xs font-medium text-slate-500 uppercase">
+            <Card className="border-border p-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase">
                 Timestamp
               </p>
-              <p className="text-sm font-semibold text-slate-900 mt-1">
+              <p className="text-sm font-semibold text-foreground mt-1">
                 {new Date(conversation.createdAt).toLocaleString()}
               </p>
             </Card>
@@ -73,10 +73,10 @@ export function ConversationDetail({
 
           {/* Transcript */}
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
               Conversation Transcript
             </h3>
-            <Card className="border-slate-200 p-4">
+            <Card className="border-border p-4">
               <div className="space-y-3">
                 {conversation.messages.map((msg) => (
                   <ChatMessage key={msg.id} message={msg} />
@@ -87,10 +87,10 @@ export function ConversationDetail({
 
           {/* Metrics Section */}
           {conversation.status === 'evaluating' ? (
-            <Card className="border-slate-200 p-6 text-center">
+            <Card className="border-border p-6 text-center">
               <div className="flex flex-col items-center gap-3">
-                <div className="h-8 w-8 rounded-full border-2 border-slate-400 border-t-slate-600 animate-spin" />
-                <p className="text-sm text-slate-600 font-medium">
+                <div className="h-8 w-8 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+                <p className="text-sm text-muted-foreground font-medium">
                   Metrics are being computed…
                 </p>
               </div>
@@ -99,29 +99,28 @@ export function ConversationDetail({
             <>
               {/* Overall Score with Gradient */}
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                <h3 className="text-lg font-semibold text-foreground mb-4">
                   Overall Ethical Score
                 </h3>
-                <Card className="border-slate-200 p-8 text-center bg-gradient-to-b from-slate-50 to-white">
+                <Card className="border-border p-8 text-center bg-gradient-to-b from-muted/50 to-background">
                   <div className="flex justify-center items-end gap-3">
                     <div>
                       <div
-                        className={`text-6xl font-bold ${
-                          conversation.overallEthicalScore >= 85
-                            ? 'text-green-600'
+                        className={`text-6xl font-bold ${conversation.overallEthicalScore >= 85
+                            ? 'text-green-600 dark:text-green-500'
                             : conversation.overallEthicalScore >= 70
-                              ? 'text-amber-600'
-                              : 'text-red-600'
-                        }`}
+                              ? 'text-amber-600 dark:text-amber-500'
+                              : 'text-red-600 dark:text-red-500'
+                          }`}
                       >
                         {conversation.overallEthicalScore}
                       </div>
                     </div>
-                    <div className="text-sm font-medium text-slate-500 mb-2">
+                    <div className="text-sm font-medium text-muted-foreground mb-2">
                       /100
                     </div>
                   </div>
-                  <p className="text-sm text-slate-600 mt-4 font-medium">
+                  <p className="text-sm text-muted-foreground mt-4 font-medium">
                     {conversation.status === 'safe'
                       ? '✓ Ethical standards met'
                       : conversation.status === 'needs_review'
@@ -133,7 +132,7 @@ export function ConversationDetail({
 
               {/* Dimension Scores Grid - 2x4 */}
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                <h3 className="text-lg font-semibold text-foreground mb-4">
                   Ethical Dimensions
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -144,10 +143,10 @@ export function ConversationDetail({
                     const isLowScore = dim.score < 70;
 
                     const bgColor = isHighScore
-                      ? 'bg-green-50 border-green-200'
+                      ? 'bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800/30'
                       : isMediumScore
-                        ? 'bg-amber-50 border-amber-200'
-                        : 'bg-red-50 border-red-200';
+                        ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800/30'
+                        : 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800/30';
 
                     const progressColor = isHighScore
                       ? 'bg-green-500'
@@ -156,10 +155,10 @@ export function ConversationDetail({
                         : 'bg-red-500';
 
                     const scoreColor = isHighScore
-                      ? 'text-green-600'
+                      ? 'text-green-600 dark:text-green-500'
                       : isMediumScore
-                        ? 'text-amber-600'
-                        : 'text-red-600';
+                        ? 'text-amber-600 dark:text-amber-500'
+                        : 'text-red-600 dark:text-red-500';
 
                     return (
                       <Card
@@ -167,7 +166,7 @@ export function ConversationDetail({
                         className={`border ${bgColor} p-4`}
                       >
                         <div className="flex items-start justify-between mb-3">
-                          <p className="text-xs font-semibold text-slate-900 leading-tight">
+                          <p className="text-xs font-semibold text-foreground leading-tight">
                             {dim.name}
                           </p>
                           <span className={`text-lg font-bold ${scoreColor}`}>
@@ -175,14 +174,14 @@ export function ConversationDetail({
                           </span>
                         </div>
 
-                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden mb-2">
+                        <div className="h-2 rounded-full bg-muted overflow-hidden mb-2">
                           <div
                             className={`h-full ${progressColor} transition-all rounded-full`}
                             style={{ width: `${dim.score}%` }}
                           />
                         </div>
 
-                        <p className="text-xs font-medium text-slate-600 capitalize">
+                        <p className="text-xs font-medium text-muted-foreground capitalize">
                           {dim.status}
                         </p>
                       </Card>
@@ -201,7 +200,7 @@ export function ConversationDetail({
               {/* Download Report */}
               <Button
                 onClick={handleDownloadReport}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
               >
                 <Download className="h-4 w-4" />
                 Download Audit Report (PDF)

@@ -26,9 +26,9 @@ export function DepartmentProfileCard({
   ];
 
   return (
-    <Card className="border-slate-200 p-6">
+    <Card className="border-border p-6">
       <div className="flex items-start justify-between mb-4">
-        <h3 className="text-lg font-semibold text-slate-900">
+        <h3 className="text-lg font-semibold text-foreground">
           {profile.name}
         </h3>
         <Button
@@ -44,21 +44,21 @@ export function DepartmentProfileCard({
 
       <div className="grid grid-cols-2 gap-3">
         {weights.map((item) => (
-          <div key={item.label} className="flex items-center justify-between p-2 bg-slate-50 rounded">
-            <span className="text-xs text-slate-600 font-medium">
+          <div key={item.label} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+            <span className="text-xs text-muted-foreground font-medium">
               {item.label.split('&')[0]}
             </span>
-            <span className="text-sm font-semibold text-slate-900">
+            <span className="text-sm font-semibold text-foreground">
               {item.value}%
             </span>
           </div>
         ))}
       </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-200">
-        <p className="text-xs text-slate-500">
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-xs text-muted-foreground">
           Total Weight:{' '}
-          <span className="font-semibold text-slate-900">
+          <span className="font-semibold text-foreground">
             {weights.reduce((sum, w) => sum + w.value, 0)}%
           </span>
         </p>

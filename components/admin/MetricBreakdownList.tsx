@@ -41,20 +41,20 @@ export function MetricBreakdownList({ breakdown }: MetricBreakdownListProps) {
   ];
 
   return (
-    <Card className="border-slate-200 p-6">
-      <h3 className="text-lg font-semibold text-slate-900 mb-4">
+    <Card className="border-border p-6">
+      <h3 className="text-lg font-semibold text-foreground mb-4">
         Detailed Metrics
       </h3>
       <div className="space-y-3">
         {metrics.map((metric) => (
           <div
             key={metric.label}
-            className="flex items-center justify-between p-3 rounded-lg bg-slate-50"
+            className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
           >
-            <span className="text-sm font-medium text-slate-700">
+            <span className="text-sm font-medium text-muted-foreground">
               {metric.label}
             </span>
-            <span className="text-sm font-semibold text-slate-900">
+            <span className="text-sm font-semibold text-foreground">
               {metric.value}
             </span>
           </div>

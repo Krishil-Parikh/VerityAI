@@ -36,15 +36,15 @@ export function TrafficLightStream({
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case 'safe':
-        return 'bg-green-100 text-green-900';
+        return 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300';
       case 'needs_review':
-        return 'bg-yellow-100 text-yellow-900';
+        return 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-300';
       case 'violation':
-        return 'bg-red-100 text-red-900';
+        return 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-300';
       case 'evaluating':
-        return 'bg-slate-200 text-slate-700 animate-pulse';
+        return 'bg-muted text-muted-foreground animate-pulse';
       default:
-        return 'bg-slate-100 text-slate-900';
+        return 'bg-muted text-foreground';
     }
   };
 
@@ -53,15 +53,15 @@ export function TrafficLightStream({
   );
 
   return (
-    <Card className="border-slate-200 mb-6">
+    <Card className="border-border mb-6">
       <div className="p-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-4">
           Real-Time Conversation Stream
         </h2>
 
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {sortedConversations.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-8">
+            <p className="text-sm text-muted-foreground text-center py-8">
               No conversations yet
             </p>
           ) : (
@@ -69,7 +69,7 @@ export function TrafficLightStream({
               <div
                 key={conv.id}
                 onClick={() => onSelectConversation?.(conv)}
-                className="flex items-center gap-4 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors cursor-pointer"
               >
                 <div className="flex-shrink-0">
                   {getStatusIcon(conv.status)}
@@ -77,17 +77,17 @@ export function TrafficLightStream({
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-slate-900">
+                    <span className="text-sm font-medium text-foreground">
                       {conv.citizenId}
                     </span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-muted-foreground">
                       {formatDate(conv.updatedAt)}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-600 truncate">
+                  <p className="text-sm text-muted-foreground truncate">
                     {truncateText(
                       conv.messages[conv.messages.length - 1]?.content ||
-                        'No content',
+                      'No content',
                       80
                     )}
                   </p>
@@ -96,10 +96,10 @@ export function TrafficLightStream({
                 <div className="flex items-center gap-3 flex-shrink-0">
                   {conv.status !== 'evaluating' && (
                     <div className="text-right">
-                      <p className="text-sm font-semibold text-slate-900">
+                      <p className="text-sm font-semibold text-foreground">
                         {conv.overallEthicalScore}
                       </p>
-                      <p className="text-xs text-slate-500">/100</p>
+                      <p className="text-xs text-muted-foreground">/100</p>
                     </div>
                   )}
                   {conv.status === 'evaluating' && (

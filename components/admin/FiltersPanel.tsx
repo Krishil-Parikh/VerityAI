@@ -54,12 +54,12 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
   };
 
   return (
-    <Card className="border-slate-200 p-6 mb-6">
-      <h3 className="text-lg font-semibold text-slate-900 mb-4">Filters</h3>
+    <Card className="border-border p-6 mb-6">
+      <h3 className="text-lg font-semibold text-foreground mb-4">Filters</h3>
       <div className="space-y-4">
         {/* Status Filter */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
+          <label className="block text-sm font-medium text-muted-foreground mb-2">
             Status
           </label>
           <div className="flex gap-2 flex-wrap">
@@ -73,8 +73,8 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
                 }
                 className={
                   filters.status === status
-                    ? 'bg-blue-600 text-white'
-                    : ''
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
                 }
               >
                 {status === 'all'
@@ -91,7 +91,7 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
 
         {/* Score Range */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-3">
+          <label className="block text-sm font-medium text-muted-foreground mb-3">
             Ethical Score Range: {filters.minScore} - {filters.maxScore}
           </label>
           <Slider

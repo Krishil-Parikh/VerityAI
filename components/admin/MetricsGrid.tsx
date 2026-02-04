@@ -9,31 +9,31 @@ interface MetricsGridProps {
 }
 
 export function MetricsGrid({ dimensionScores }: MetricsGridProps) {
-  const getScoreColor = (status: 'safe' | 'review' | 'violation') => {
+  const getScoreColor = (status: 'safe' | 'needs_review' | 'violation') => {
     switch (status) {
       case 'safe':
-        return 'bg-green-100 text-green-900';
-      case 'review':
-        return 'bg-yellow-100 text-yellow-900';
+        return 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300';
+      case 'needs_review':
+        return 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-300';
       case 'violation':
-        return 'bg-red-100 text-red-900';
+        return 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-300';
     }
   };
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {dimensionScores.map((dim) => (
-        <Card key={dim.name} className="border-slate-200 p-4">
-          <p className="text-xs text-slate-600 mb-2 line-clamp-2">
+        <Card key={dim.name} className="border-border p-4">
+          <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
             {dim.name}
           </p>
           <div className="flex items-baseline gap-1 mb-2">
-            <p className="text-2xl font-bold text-slate-900">{dim.score}</p>
-            <p className="text-xs text-slate-500">/100</p>
+            <p className="text-2xl font-bold text-foreground">{dim.score}</p>
+            <p className="text-xs text-muted-foreground">/100</p>
           </div>
           <Badge className={`${getScoreColor(dim.status)} border-0 text-xs`}>
             {dim.status === 'safe' && 'Safe'}
-            {dim.status === 'review' && 'Review'}
+            {dim.status === 'needs_review' && 'Needs Review'}
             {dim.status === 'violation' && 'Violation'}
           </Badge>
         </Card>

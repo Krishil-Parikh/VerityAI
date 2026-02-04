@@ -10,7 +10,7 @@ interface SimpleChartProps {
 export function SimpleChart({ conversations }: SimpleChartProps) {
   // Calculate average score per dimension
   const dimensionScores: { [key: string]: number[] } = {};
-  
+
   conversations.forEach((conv) => {
     conv.dimensionScores.forEach((dim) => {
       if (!dimensionScores[dim.name]) {
@@ -38,9 +38,9 @@ export function SimpleChart({ conversations }: SimpleChartProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Dimension Scores */}
-      <Card className="border-slate-200">
+      <Card className="border-border">
         <div className="p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">
+          <h3 className="text-lg font-semibold text-foreground mb-6">
             Average Score per Dimension
           </h3>
           <div className="space-y-4">
@@ -56,14 +56,14 @@ export function SimpleChart({ conversations }: SimpleChartProps) {
               return (
                 <div key={item.name}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-slate-700 font-medium">
+                    <span className="text-sm text-muted-foreground font-medium">
                       {item.name.split('&')[0]}
                     </span>
-                    <span className="text-sm font-semibold text-slate-900">
+                    <span className="text-sm font-semibold text-foreground">
                       {item.average}
                     </span>
                   </div>
-                  <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-3 bg-muted rounded-full overflow-hidden">
                     <div
                       className={`h-full ${color} transition-all`}
                       style={{ width: `${percentage}%` }}
@@ -77,9 +77,9 @@ export function SimpleChart({ conversations }: SimpleChartProps) {
       </Card>
 
       {/* Hourly Conversations */}
-      <Card className="border-slate-200">
+      <Card className="border-border">
         <div className="p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">
+          <h3 className="text-lg font-semibold text-foreground mb-6">
             Conversations per Hour
           </h3>
           <div className="flex items-end justify-between gap-2 h-40">
@@ -93,7 +93,7 @@ export function SimpleChart({ conversations }: SimpleChartProps) {
                     className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
                     style={{ height: `${heightPercent}%`, minHeight: '4px' }}
                   />
-                  <p className="text-xs text-slate-500 mt-2">{item.hour}</p>
+                  <p className="text-xs text-muted-foreground mt-2">{item.hour}</p>
                 </div>
               );
             })}
