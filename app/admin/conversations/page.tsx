@@ -63,23 +63,21 @@ export default function ConversationsPage() {
 
       <FiltersPanel onFilterChange={setFilters} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <Card className="border-border overflow-hidden">
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">
-                All Conversations ({filteredConversations.length})
-              </h2>
-              <ConversationTable
-                conversations={filteredConversations}
-                onViewDetails={setSelectedConversation}
-              />
-            </div>
-          </Card>
-        </div>
+      <div className="space-y-6">
+        <Card className="border-border overflow-hidden">
+          <div className="p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">
+              All Conversations ({filteredConversations.length})
+            </h2>
+            <ConversationTable
+              conversations={filteredConversations}
+              onViewDetails={setSelectedConversation}
+            />
+          </div>
+        </Card>
 
         {selectedConversation && selectedConversation.status !== 'evaluating' && selectedConversation.dimensionScores.length > 0 && (
-          <div>
+          <div className="max-w-md ml-auto">
             <MetricsRadarCard
               dimensionScores={selectedConversation.dimensionScores}
               overallScore={selectedConversation.overallEthicalScore}
