@@ -78,6 +78,7 @@ export interface AlertSettings {
 export interface BackendResponse {
   success: boolean;
   ai_response: string;
+  bot_model: string;
   metrics: {
     overall_ethical_score: number;
     s_llm_score: number;

@@ -164,6 +164,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     success: bool
     ai_response: str
+    bot_model: str
     metrics: dict
     tokens: dict
     grounding: dict
@@ -316,6 +317,7 @@ async def process_query(request: QueryRequest):
         
         response_obj = QueryResponse(
             success=True, ai_response=response,
+            bot_model=bot_model,
             metrics={
                 "overall_ethical_score": overall, 
                 "s_llm_score": round(result.s_llm * 100, 2),  # Scale to 0-100
@@ -405,8 +407,9 @@ async def get_history(limit: int = 100):
                     
                 response_data = json.loads(full_json)
                 
-                # Add timestamp and unique ID
+                # Add metadata
                 response_data["timestamp"] = row.get("timestamp", datetime.now().isoformat())
+                response_data["bot_model"] = row.get("bot_model", "llama3")
                 response_data["id"] = f"resp-{idx}-{hash(str(row.get('timestamp', '')))}"
                 
                 history.append(response_data)

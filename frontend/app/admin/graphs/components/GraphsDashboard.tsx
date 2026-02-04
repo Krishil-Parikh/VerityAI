@@ -17,11 +17,20 @@ import { metricsStore } from '@/store/metricsStore';
 import { Button } from "@/components/ui/button";
 import { FileText, ShieldAlert, BadgeCheck, Activity, RefreshCw, Loader2 } from 'lucide-react';
 
-type ViewType = 'score' | 'tokens' | 'dimensions' | 'rag';
+type ViewType = 'score' | 'tokens' | 'dimensions' | 'rag' | 'comparison';
+
+const MODEL_COLORS: Record<string, string> = {
+    'llama3': '#8884d8',
+    'deepseek-coder:6.7b': '#82ca9d',
+    'qwen2.5:3b': '#ffc658',
+    'tinyllama:latest': '#ff8042',
+    'gemma3:12b': '#0088fe',
+    'all': '#8884d8'
+};
 
 export function GraphsDashboard() {
     const [data, setData] = useState<BackendResponse[]>([]);
-    const [view, setView] = useState<ViewType>('score');
+    const [view, setView] = useState<ViewType>('comparison'); // Default to comparison
     const [queryCount, setQueryCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -68,6 +77,26 @@ export function GraphsDashboard() {
         metricsStore.clearHistory();
     };
 
+    // Transform data for comparison view
+    const getComparisonData = () => {
+        // Group by timestamp (bucketed by minute or second)
+        const groups: Record<string, any> = {};
+        
+        data.forEach(item => {
+            const ts = item.timestamp || new Date().toISOString();
+            // Using a slightly fuzzy timestamp matching if they were sent in a batch
+            // or just use the raw timestamp
+            if (!groups[ts]) {
+                groups[ts] = { timestamp: ts };
+            }
+            const modelKey = item.bot_model || 'unknown';
+            groups[ts][modelKey] = item.metrics.overall_ethical_score;
+            groups[ts][`${modelKey}_s_llm`] = item.metrics.s_llm_score;
+        });
+        
+        return Object.values(groups).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    };
+
     const renderContent = () => {
         if (isLoading) {
             return (
@@ -98,12 +127,81 @@ export function GraphsDashboard() {
             );
         }
 
+        const models = Array.from(new Set(data.map(item => item.bot_model || 'unknown')));
+        const comparisonData = getComparisonData();
+
         switch (view) {
+            case 'comparison':
+                return (
+                    <div className="space-y-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Model Performance Comparison</CardTitle>
+                                <CardDescription>Comparing Overall Ethical Scores across different LLMs.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[400px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={comparisonData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="timestamp" />
+                                        <YAxis domain={[0, 100]} />
+                                        <Tooltip />
+                                        <Legend />
+                                        {models.map((model) => (
+                                            <Line 
+                                                key={model}
+                                                type="monotone" 
+                                                dataKey={model} 
+                                                name={model} 
+                                                stroke={MODEL_COLORS[model] || '#8884d8'} 
+                                                strokeWidth={3} 
+                                                dot={true} 
+                                                connectNulls={true}
+                                            />
+                                        ))}
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Weighted Risk comparison (S_LLM)</CardTitle>
+                                <CardDescription>Comparing S_LLM Scores across different LLMs.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[400px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={comparisonData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="timestamp" />
+                                        <YAxis domain={[0, 100]} />
+                                        <Tooltip />
+                                        <Legend />
+                                        {models.map((model) => (
+                                            <Line 
+                                                key={`${model}_s_llm`}
+                                                type="monotone" 
+                                                dataKey={`${model}_s_llm`} 
+                                                name={`${model} (S_LLM)`} 
+                                                stroke={MODEL_COLORS[model] || '#8884d8'} 
+                                                strokeWidth={2} 
+                                                strokeDasharray="5 5"
+                                                dot={true} 
+                                                connectNulls={true}
+                                            />
+                                        ))}
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+                    </div>
+                );
+
             case 'score':
                 return (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Overall Ethical Score</CardTitle>
+                            <CardTitle>Overall Ethical Score Trend</CardTitle>
                             <CardDescription>Updates automatically when new queries are processed. {queryCount} queries recorded.</CardDescription>
                         </CardHeader>
                         <CardContent className="h-[400px]">
@@ -203,7 +301,7 @@ export function GraphsDashboard() {
                                             <FileText className="h-4 w-4" />
                                             {source.doc}
                                         </span>
-                                        <span className="text-sm font-normal text-muted-foreground">Score: {(source.score * 100).toFixed(1)}%</span>
+                                        <span className="text-sm font-normal text-muted-foreground">Score: {(source.score).toFixed(1)}%</span>
                                     </CardTitle>
                                     <CardDescription>
                                         Page {source.page} - Click to open PDF
@@ -222,11 +320,18 @@ export function GraphsDashboard() {
             <div className="flex flex-wrap gap-2 items-center justify-between">
                 <div className="flex flex-wrap gap-2">
                     <Button
+                        variant={view === 'comparison' ? 'default' : 'outline'}
+                        onClick={() => setView('comparison')}
+                        className="flex items-center gap-2"
+                    >
+                        <RefreshCw className="h-4 w-4" /> Model Comparison
+                    </Button>
+                    <Button
                         variant={view === 'score' ? 'default' : 'outline'}
                         onClick={() => setView('score')}
                         className="flex items-center gap-2"
                     >
-                        <Activity className="h-4 w-4" /> Overall Score
+                        <Activity className="h-4 w-4" /> Score Trend
                     </Button>
                     <Button
                         variant={view === 'tokens' ? 'default' : 'outline'}

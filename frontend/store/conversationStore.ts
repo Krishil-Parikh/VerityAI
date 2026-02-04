@@ -294,10 +294,12 @@ export const conversationStore = {
 
       notifySubscribers();
       
-      // Push best result to metrics store
-      if (bestResult?.fullResponse) {
-        metricsStore.addMetricsPoint(bestResult.fullResponse);
-      }
+      // Push all successful results to metrics store for comparison
+      validResults.forEach(r => {
+        if (r && r.fullResponse) {
+          metricsStore.addMetricsPoint(r.fullResponse);
+        }
+      });
 
       return JSON.parse(JSON.stringify(conv));
     }
