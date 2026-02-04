@@ -36,21 +36,19 @@ export default function AdminPage() {
 
       <OverviewCards conversations={conversations} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <TrafficLightStream
-            conversations={conversations}
-            onSelectConversation={setSelectedConversation}
-          />
-        </div>
+      <TrafficLightStream
+        conversations={conversations}
+        onSelectConversation={setSelectedConversation}
+      />
 
-        {selectedConversation && selectedConversation.status !== 'evaluating' && selectedConversation.dimensionScores.length > 0 && (
+      {selectedConversation && selectedConversation.status !== 'evaluating' && selectedConversation.dimensionScores.length > 0 && (
+        <div className="w-full">
           <MetricsRadarCard
             dimensionScores={selectedConversation.dimensionScores}
             overallScore={selectedConversation.overallEthicalScore}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <SimpleChart conversations={conversations} />
     </div>

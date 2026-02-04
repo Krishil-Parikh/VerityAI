@@ -43,6 +43,11 @@ const adminNav: NavItem[] = [
     href: '/admin/settings',
     icon: <Settings className="h-4 w-4" />,
   },
+  {
+    label: 'Graphs',
+    href: '/admin/graphs',
+    icon: <BarChart3 className="h-4 w-4" />,
+  }
 ];
 
 export function AppSidebar() {
