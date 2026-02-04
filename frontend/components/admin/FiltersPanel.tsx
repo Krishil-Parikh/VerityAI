@@ -63,7 +63,7 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
             Status
           </label>
           <div className="flex gap-2 flex-wrap">
-            {['all', 'safe', 'review', 'violation'].map((status) => (
+            {['all', 'safe', 'needs_review', 'violation'].map((status) => (
               <Button
                 key={status}
                 variant={filters.status === status ? 'default' : 'outline'}
@@ -81,7 +81,7 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
                   ? 'All'
                   : status === 'safe'
                     ? 'Safe'
-                    : status === 'review'
+                    : status === 'needs_review'
                       ? 'Needs Review'
                       : 'Violation'}
               </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     LineChart,
     Line,
@@ -17,6 +17,14 @@ import { metricsStore } from '@/store/metricsStore';
 import { Button } from "@/components/ui/button";
 import { FileText, ShieldAlert, BadgeCheck, Activity, RefreshCw, Loader2 } from 'lucide-react';
 
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+
 type ViewType = 'score' | 'tokens' | 'dimensions' | 'rag' | 'comparison';
 
 const MODEL_COLORS: Record<string, string> = {
@@ -28,9 +36,19 @@ const MODEL_COLORS: Record<string, string> = {
     'all': '#8884d8'
 };
 
+const ALL_MODELS = [
+    { value: 'all', label: 'All Models' },
+    { value: 'llama3', label: 'Llama 3' },
+    { value: 'deepseek-coder:6.7b', label: 'DeepSeek Coder' },
+    { value: 'qwen2.5:3b', label: 'Qwen 2.5' },
+    { value: 'tinyllama:latest', label: 'TinyLlama' },
+    { value: 'gemma3:12b', label: 'Gemma 3' },
+];
+
 export function GraphsDashboard() {
     const [data, setData] = useState<BackendResponse[]>([]);
-    const [view, setView] = useState<ViewType>('comparison'); // Default to comparison
+    const [view, setView] = useState<ViewType>('comparison');
+    const [selectedModel, setSelectedModel] = useState<string>('all');
     const [queryCount, setQueryCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -39,13 +57,11 @@ export function GraphsDashboard() {
         const fetchInitialData = async () => {
             setIsLoading(true);
             try {
-                // Load historical data from backend (this is the key fix!)
                 await metricsStore.loadHistory();
             } catch (error) {
                 console.error('Error fetching initial telemetry:', error);
             }
             
-            // Load from store
             setData(metricsStore.getMetricsHistory());
             setQueryCount(metricsStore.getHistoryCount());
             setIsLoading(false);
@@ -53,7 +69,6 @@ export function GraphsDashboard() {
 
         fetchInitialData();
 
-        // Subscribe to store changes for future updates
         const unsubscribe = metricsStore.subscribe(() => {
             setData(metricsStore.getMetricsHistory());
             setQueryCount(metricsStore.getHistoryCount());
@@ -65,7 +80,6 @@ export function GraphsDashboard() {
     const handleRefresh = async () => {
         setIsLoading(true);
         try {
-            // Reload full history from backend
             await metricsStore.loadHistory();
         } catch (error) {
             console.error('Error refreshing:', error);
@@ -77,15 +91,18 @@ export function GraphsDashboard() {
         metricsStore.clearHistory();
     };
 
+    // Filter data based on selected model
+    const filteredData = useMemo(() => {
+        if (selectedModel === 'all') return data;
+        return data.filter(item => item.bot_model === selectedModel);
+    }, [data, selectedModel]);
+
     // Transform data for comparison view
     const getComparisonData = () => {
-        // Group by timestamp (bucketed by minute or second)
         const groups: Record<string, any> = {};
         
         data.forEach(item => {
             const ts = item.timestamp || new Date().toISOString();
-            // Using a slightly fuzzy timestamp matching if they were sent in a batch
-            // or just use the raw timestamp
             if (!groups[ts]) {
                 groups[ts] = { timestamp: ts };
             }
@@ -117,7 +134,6 @@ export function GraphsDashboard() {
                         <h3 className="text-lg font-semibold mb-2">No Data Yet</h3>
                         <p className="text-muted-foreground max-w-md mb-4">
                             Send a query from the Citizen Portal to see real-time metrics here.
-                            Graphs update automatically when new queries are processed.
                         </p>
                         <Button onClick={handleRefresh} variant="outline">
                             <RefreshCw className="h-4 w-4 mr-2" /> Refresh
@@ -127,7 +143,7 @@ export function GraphsDashboard() {
             );
         }
 
-        const models = Array.from(new Set(data.map(item => item.bot_model || 'unknown')));
+        const availableModels = Array.from(new Set(data.map(item => item.bot_model || 'unknown')));
         const comparisonData = getComparisonData();
 
         switch (view) {
@@ -147,7 +163,7 @@ export function GraphsDashboard() {
                                         <YAxis domain={[0, 100]} />
                                         <Tooltip />
                                         <Legend />
-                                        {models.map((model) => (
+                                        {availableModels.map((model) => (
                                             <Line 
                                                 key={model}
                                                 type="monotone" 
@@ -177,7 +193,7 @@ export function GraphsDashboard() {
                                         <YAxis domain={[0, 100]} />
                                         <Tooltip />
                                         <Legend />
-                                        {models.map((model) => (
+                                        {availableModels.map((model) => (
                                             <Line 
                                                 key={`${model}_s_llm`}
                                                 type="monotone" 
@@ -201,19 +217,21 @@ export function GraphsDashboard() {
                 return (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Overall Ethical Score Trend</CardTitle>
-                            <CardDescription>Updates automatically when new queries are processed. {queryCount} queries recorded.</CardDescription>
+                            <CardTitle>Overall Ethical Score Trend {selectedModel !== 'all' && `(${selectedModel})`}</CardTitle>
+                            <CardDescription>
+                                {selectedModel === 'all' ? 'Showing all models mixed.' : `Showing results only for ${selectedModel}.`}
+                            </CardDescription>
                         </CardHeader>
                         <CardContent className="h-[400px]">
                             <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={data}>
+                                <LineChart data={filteredData}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="timestamp" />
                                     <YAxis domain={[0, 100]} />
                                     <Tooltip />
                                     <Legend />
-                                    <Line type="monotone" dataKey="metrics.overall_ethical_score" name="Ethical Score" stroke="#8884d8" strokeWidth={3} dot={true} isAnimationActive={true} />
-                                    <Line type="monotone" dataKey="metrics.s_llm_score" name="S_LLM Score" stroke="#82ca9d" strokeWidth={2} dot={true} isAnimationActive={true} />
+                                    <Line type="monotone" dataKey="metrics.overall_ethical_score" name="Ethical Score" stroke={MODEL_COLORS[selectedModel] || "#8884d8"} strokeWidth={3} dot={true} />
+                                    <Line type="monotone" dataKey="metrics.s_llm_score" name="S_LLM Score" stroke="#82ca9d" strokeWidth={2} dot={true} />
                                 </LineChart>
                             </ResponsiveContainer>
                         </CardContent>
@@ -224,20 +242,20 @@ export function GraphsDashboard() {
                 return (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Token Usage</CardTitle>
-                            <CardDescription>Monitor input and output token consumption per query.</CardDescription>
+                            <CardTitle>Token Usage {selectedModel !== 'all' && `(${selectedModel})`}</CardTitle>
+                            <CardDescription>Monitor input and output token consumption.</CardDescription>
                         </CardHeader>
                         <CardContent className="h-[400px]">
                             <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={data}>
+                                <LineChart data={filteredData}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="timestamp" />
                                     <YAxis />
                                     <Tooltip />
                                     <Legend />
-                                    <Line type="monotone" dataKey="tokens.total_tokens" name="Total Tokens" stroke="#82ca9d" strokeWidth={2} dot={true} isAnimationActive={true} />
-                                    <Line type="monotone" dataKey="tokens.input_tokens" name="Input Tokens" stroke="#8884d8" strokeWidth={2} dot={true} isAnimationActive={true} />
-                                    <Line type="monotone" dataKey="tokens.output_tokens" name="Output Tokens" stroke="#ffc658" strokeWidth={2} dot={true} isAnimationActive={true} />
+                                    <Line type="monotone" dataKey="tokens.total_tokens" name="Total Tokens" stroke="#82ca9d" strokeWidth={2} dot={true} />
+                                    <Line type="monotone" dataKey="tokens.input_tokens" name="Input Tokens" stroke="#8884d8" strokeWidth={2} dot={true} />
+                                    <Line type="monotone" dataKey="tokens.output_tokens" name="Output Tokens" stroke="#ffc658" strokeWidth={2} dot={true} />
                                 </LineChart>
                             </ResponsiveContainer>
                         </CardContent>
@@ -245,8 +263,7 @@ export function GraphsDashboard() {
                 );
 
             case 'dimensions':
-                // Get keys from the last data point or default if empty
-                const lastPoint = data[data.length - 1];
+                const lastPoint = filteredData[filteredData.length - 1] || data[data.length - 1];
                 const dimensionKeys = lastPoint ? Object.keys(lastPoint.dimensions) : [];
 
                 return (
@@ -260,22 +277,21 @@ export function GraphsDashboard() {
                                 </CardHeader>
                                 <CardContent className="h-[150px] p-4 pt-0">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={data}>
+                                        <LineChart data={filteredData}>
                                             <XAxis dataKey="timestamp" hide />
                                             <YAxis domain={[0, 100]} hide />
                                             <Tooltip labelStyle={{ color: 'black' }} />
                                             <Line
                                                 type="monotone"
                                                 dataKey={`dimensions.${key}.overall_score`}
-                                                stroke="#f43f5e"
+                                                stroke={MODEL_COLORS[selectedModel] || "#f43f5e"}
                                                 strokeWidth={2}
                                                 dot={true}
-                                                isAnimationActive={true}
                                             />
                                         </LineChart>
                                     </ResponsiveContainer>
                                     <div className="text-2xl font-bold mt-2 text-right">
-                                        {lastPoint ? Math.round(lastPoint.dimensions[key].overall_score) : '-'}
+                                        {filteredData.length > 0 ? Math.round(filteredData[filteredData.length - 1].dimensions[key].overall_score) : '-'}
                                     </div>
                                 </CardContent>
                             </Card>
@@ -284,12 +300,12 @@ export function GraphsDashboard() {
                 );
 
             case 'rag':
-                const currentRag = data.length > 0 ? data[data.length - 1].rag_sources : [];
+                const currentRag = filteredData.length > 0 ? filteredData[filteredData.length - 1].rag_sources : [];
                 return (
                     <div className="grid gap-4">
-                        <h2 className="text-xl font-semibold mb-2">Active RAG References (Latest Response)</h2>
-                        {currentRag.length === 0 && <p className="text-muted-foreground">No RAG sources in recent response.</p>}
-                        {currentRag.map((source, idx) => (
+                        <h2 className="text-xl font-semibold mb-2">Active RAG References {selectedModel !== 'all' && `(${selectedModel})`}</h2>
+                        {currentRag.length === 0 && <p className="text-muted-foreground">No RAG sources in selected data.</p>}
+                        {currentRag.map((source: any, idx: number) => (
                             <Card 
                                 key={idx} 
                                 className="hover:bg-muted/50 transition-colors cursor-pointer" 
@@ -316,59 +332,43 @@ export function GraphsDashboard() {
 
     return (
         <div className="space-y-6">
-            {/* Navigation */}
-            <div className="flex flex-wrap gap-2 items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-muted/30 p-4 rounded-lg border">
                 <div className="flex flex-wrap gap-2">
-                    <Button
-                        variant={view === 'comparison' ? 'default' : 'outline'}
-                        onClick={() => setView('comparison')}
-                        className="flex items-center gap-2"
-                    >
-                        <RefreshCw className="h-4 w-4" /> Model Comparison
+                    <Button variant={view === 'comparison' ? 'default' : 'ghost'} onClick={() => setView('comparison')} className="flex items-center gap-2">
+                        <RefreshCw className="h-4 w-4" /> Comparison
                     </Button>
-                    <Button
-                        variant={view === 'score' ? 'default' : 'outline'}
-                        onClick={() => setView('score')}
-                        className="flex items-center gap-2"
-                    >
+                    <Button variant={view === 'score' ? 'default' : 'ghost'} onClick={() => setView('score')} className="flex items-center gap-2">
                         <Activity className="h-4 w-4" /> Score Trend
                     </Button>
-                    <Button
-                        variant={view === 'tokens' ? 'default' : 'outline'}
-                        onClick={() => setView('tokens')}
-                        className="flex items-center gap-2"
-                    >
+                    <Button variant={view === 'tokens' ? 'default' : 'ghost'} onClick={() => setView('tokens')} className="flex items-center gap-2">
                         <BadgeCheck className="h-4 w-4" /> Tokens
                     </Button>
-                    <Button
-                        variant={view === 'dimensions' ? 'default' : 'outline'}
-                        onClick={() => setView('dimensions')}
-                        className="flex items-center gap-2"
-                    >
+                    <Button variant={view === 'dimensions' ? 'default' : 'ghost'} onClick={() => setView('dimensions')} className="flex items-center gap-2">
                         <ShieldAlert className="h-4 w-4" /> Dimensions
                     </Button>
-                    <Button
-                        variant={view === 'rag' ? 'default' : 'outline'}
-                        onClick={() => setView('rag')}
-                        className="flex items-center gap-2"
-                    >
+                    <Button variant={view === 'rag' ? 'default' : 'ghost'} onClick={() => setView('rag')} className="flex items-center gap-2">
                         <FileText className="h-4 w-4" /> RAG Sources
                     </Button>
                 </div>
-                
-                <div className="flex gap-2">
+
+                <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Filter Model:</span>
+                    <Select value={selectedModel} onValueChange={setSelectedModel}>
+                        <SelectTrigger className="w-[180px] bg-background">
+                            <SelectValue placeholder="Select Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {ALL_MODELS.map(m => (
+                                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
-                        <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
+                        <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                     </Button>
-                    {data.length > 0 && (
-                        <Button variant="outline" size="sm" onClick={handleClearData}>
-                            Clear Data
-                        </Button>
-                    )}
                 </div>
             </div>
 
-            {/* Main Content */}
             <div className="min-h-[400px]">
                 {renderContent()}
             </div>
