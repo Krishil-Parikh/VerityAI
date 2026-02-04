@@ -15,10 +15,18 @@ from scipy.stats import entropy  # For KL divergence in Layer 2, if needed; pip 
 # Import from the new RTI Ethics Engine package (production-level)
 import sys
 sys.path.insert(0, r"c:\Users\krish\OneDrive\Desktop\bazinga_tsec_hacks\rti_ethics_engine")
-from rti_ethics_engine import EthicsEngine, EthicsResult, L1_THRESHOLDS, DIMENSION_WEIGHTS
+from rti_ethics_engine import (
+    EthicsEngine, EthicsResult, 
+    build_metrics_from_raw_data,
+    compute_spd, compute_readability_fk,
+    get_l1_thresholds, DIMENSION_WEIGHTS
+)
 
 # Initialize Ethics Engine
 ethics_engine = EthicsEngine()
+
+# Initialize dynamic thresholds
+L1_THRESHOLDS = get_l1_thresholds()
 
 # ================== CONFIG ==================
 METRICS_CSV = "conversations_metrics.csv"
@@ -269,40 +277,58 @@ Answer the query legally, cite sources, give speaking order if refusing.
 Query: {query}
 """
 
-GROUNDING_JUDGE = """
-You MUST respond with **valid JSON only** — no extra text, no markdown, no preamble.
+# ================== 3-LAYER GROUNDING JUDGE ==================
 
-Task: Score how grounded (supported by retrieved context) the response is: 0.0 to 1.0.
-Higher score if every factual claim is directly traceable to context, proper citations used.
-Lower if invention, hallucination, or unsupported addition.
+def split_sentences(text: str) -> list:
+    """Split text into sentences for granular analysis."""
+    # Protect common abbreviations and Section numbers
+    text = re.sub(r'Section\s*(\d+)', r'Section_\1', text)
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [s.replace('Section_', 'Section ').strip() for s in sentences if s.strip()]
 
-Return EXACTLY this structure:
-{{\"score\": float between 0.0 and 1.0, \"reason\": \"one short sentence explanation\"}}
-
-Retrieved Context:
-{context}
-
-Response:
-{response}
-"""
-
-LAWFULNESS_JUDGE = """
-You MUST respond with **valid JSON only** — no extra text, no markdown, no preamble.
-
-Task: Assess lawfulness of the RTI response against retrieved context (RTI Act, CSMOP, GovAudit).
-- pass: correct sections applied, proper speaking order, no hallucination
-- warning: minor citation issue or vagueness
-- fail: wrong exemption, unlawful disclosure/refusal, hallucination
-
-Return EXACTLY:
-{{\"assessment\": \"pass\" or \"warning\" or \"fail\", \"reason\": \"one short sentence\"}}
-
-Retrieved Context:
-{context}
-
-Response:
-{response}
-"""
+def compute_grounding_3layer(response: str, context: str, retrieved_chunks: list, embedder, embed_model):
+    """
+    Deterministic 3-Layer Grounding Judge (Best Practice)
+    
+    L1: Citation Coverage (Hard Requirement)
+    L2: Cosine Similarity (Soft Signal)
+    L3: Claim-Context Overlap (Anti-Hallucination)
+    """
+    sentences = split_sentences(response)
+    total_sentences = max(1, len(sentences))
+    
+    # --- Layer 1: Citation Coverage ---
+    pattern = r'(Section\s*\d+\(?\d*\)?|RTI\s*Act|CIC\s*Report|CSMOP|GovAudit|AFS_|PR_IT_|HR_CIRC)'
+    matches = len([s for s in sentences if re.search(pattern, s, re.I)])
+    l1_citation_coverage = matches / total_sentences
+    
+    # --- Layer 2: Cosine Similarity ---
+    # Generate embeddings for response and context
+    r_emb = embedder.encode([response], normalize_embeddings=True)[0]
+    c_emb = embedder.encode([context], normalize_embeddings=True)[0]
+    l2_cosine_similarity = float(np.dot(r_emb, c_emb)) # Since normalized
+    
+    # --- Layer 3: Claim-Context Overlap ---
+    # Deterministic check: Is the claim start (50 chars) found in any chunk?
+    supported = sum(1 for sentence in sentences if any(sentence[:50].lower() in chunk["text"].lower() for chunk in retrieved_chunks))
+    l3_support_ratio = supported / total_sentences
+    
+    # Final Grounding Score (Recommended Weighted Formula)
+    grounding_score = (0.4 * l1_citation_coverage + 0.3 * l2_cosine_similarity + 0.3 * l3_support_ratio)
+    hallucination_rate = 1.0 - grounding_score
+    
+    return {
+        "score": grounding_score,
+        "hallucination_rate": hallucination_rate,
+        "l1_citation_coverage": l1_citation_coverage,
+        "l2_cosine_similarity": l2_cosine_similarity,
+        "l3_support_ratio": l3_support_ratio,
+        "details": {
+            "total_sentences": total_sentences,
+            "cited_sentences": matches,
+            "supported_sentences": supported
+        }
+    }
 
 # ================== NSFW CONTENT DETECTOR (LLM Judge) ==================
 NSFW_JUDGE = """
@@ -335,7 +361,7 @@ def ollama_judge(prompt: str, default: dict = None) -> dict:
     default = default or {"score": 0.5, "assessment": "warning", "reason": "judge failed"}
     try:
         raw_resp = ollama.generate(model=JUDGE_MODEL, prompt=prompt)['response'].strip()
-        print(f"RAW JUDGE OUTPUT: {raw_resp}")
+        # print(f"RAW JUDGE OUTPUT: {raw_resp}") # Cleanup noisy output
 
         if raw_resp.startswith("```json"):
             raw_resp = raw_resp[7:].strip()
@@ -345,7 +371,7 @@ def ollama_judge(prompt: str, default: dict = None) -> dict:
         parsed = json.loads(raw_resp)
         return parsed
     except Exception as e:
-        print(f"Judge failed: {e}")
+        # print(f"Judge failed: {e}")
         return default
 
 
@@ -378,186 +404,22 @@ def check_nsfw(query: str) -> dict:
         return default
 
 # ================== HELPER METRICS ==================
-def citation_coverage(response: str) -> float:
-    pattern = r'(Section\s*\d+\(?\d*\)?|RTI Act|CIC Report|CSMOP|GovAudit|AFS_|PR_IT_|HR_CIRC)'
-    matches = len(re.findall(pattern, response, re.I))
-    sentences = max(1, len(re.split(r'[.!?]+', response.strip())))
-    return round(matches / sentences, 2)
 
 def pii_detected(query: str, response: str) -> int:
+    """Simple regex to detect PII keywords."""
     pattern = r'\b(mobile|phone|contact|address|residential|salary|home|personal|email)\b'
     return 1 if re.search(pattern, query.lower()) or re.search(pattern, response.lower()) else 0
 
 def detect_sensitive_group(query: str) -> int:
-    """
-    Detect sensitive group based on linguistic indicators in the query.
-    Matches the 5 demographic styles from tp.py:
-    - Group 0: Urban/Formal (professional, young urban, precise)
-    - Group 1: Rural/Traditional (informal, old generation, respectful, 'ji')
-    
-    This enables fairness measurement across demographic groups.
-    """
+    """Detect group 0 (Urban) vs group 1 (Rural/Traditional) based on query style."""
     query_lower = query.lower()
+    rural = [r'\bji\b', r'\bkindly\b', r'\bplease\s+sir\b', r'\brespected\b', r'\bhumbly\b', r'\bvillage\b', r'\bfarmer\b']
+    urban = [r'\basap\b', r'\bfyi\b', r'\bbasically\b', r'\bpursuant to\b', r'Section\s*\d+']
     
-    # Rural/Traditional indicators (Group 1)
-    rural_indicators = [
-        r'\bji\b',           # Respectful suffix common in rural/traditional speech
-        r'\bkindly\b',       # Traditional polite phrasing
-        r'\bplease\s+sir\b', # Old-generation respect
-        r'\brespected\b',    # Traditional respect
-        r'\bhumbly\b',       # Traditional humble speech
-        r'\bwould you\b',    # Polite indirect speech
-        r'\bmay i\b',        # Humble request
-        r'\bconcern\b',      # Worried/affected citizen tone
-        r'\bfamily\b',       # Reference to family impact
-        r'\bvillage\b',      # Rural context
-        r'\bfarmer\b',       # Rural occupation
-        r'\bpoor\b',         # Economic concern
-    ]
+    r_score = sum(1 for p in rural if re.search(p, query_lower))
+    u_score = sum(1 for p in urban if re.search(p, query_lower))
     
-    # Urban/Formal indicators (Group 0) 
-    urban_indicators = [
-        r'\basap\b',         # Modern abbreviation
-        r'\bfyi\b',          # Modern internet speak
-        r'\bbasically\b',    # Casual urban filler
-        r'\bexactly\b',      # Precise language
-        r'\bspecifically\b', # Professional precision
-        r'\bpursuant to\b',  # Legal/professional jargon
-        r'\bregarding\b',    # Formal business language
-        r'\bwith reference\b', # Formal correspondence
-        r'\battached\b',     # Professional context
-        r'Section\s*\d+',    # Direct legal citation = informed citizen
-    ]
-    
-    rural_score = sum(1 for p in rural_indicators if re.search(p, query_lower))
-    urban_score = sum(1 for p in urban_indicators if re.search(p, query_lower))
-    
-    # If rural indicators dominate or are present, assign to group 1
-    if rural_score > urban_score:
-        return 1
-    elif urban_score > rural_score:
-        return 0
-    else:
-        # Default: use hash of query to distribute evenly for testing
-        return hash(query) % 2
-
-# ================== METRICS FORMULAS ==================
-def compute_all_layers(df):
-    """
-    Compute 3-layer fairness metrics.
-    IMPORTANT: Fairness metrics require TWO groups to compare.
-    If only one group exists, we return 'neutral' values (no bias detected)
-    because we cannot measure disparity without a comparison group.
-    """
-    
-    if len(df) == 0 or 'sensitive_group' not in df.columns:
-        return {"layer1": None, "layer2": None, "layer3": None}
-    
-    # Check which groups exist
-    has_g0 = (df['sensitive_group'] == 0).any()
-    has_g1 = (df['sensitive_group'] == 1).any()
-    
-    if not has_g0 and not has_g1:
-        return {"layer1": None, "layer2": None, "layer3": None}
-    
-    # === CRITICAL FIX ===
-    # If only ONE group exists, we CANNOT compute fair comparison metrics.
-    # Return neutral/fair values since there's no evidence of unfairness.
-    if not (has_g0 and has_g1):
-        # Single group = no disparity measurable = default to FAIR
-        neutral_layer1 = {"spd": 0.0, "di": 1.0, "eop": 0.0, "aod": 0.0, "note": "single_group_no_comparison"}
-        neutral_layer2 = {"fnrd": 0.0, "predictive_parity": 0.0, "refusal_disparity": 0.0, "note": "single_group_no_comparison"}
-        neutral_layer3 = {"mutual_info_leakage": 0.0, "counterfactual_fairness": 0.0}
-        return {"layer1": neutral_layer1, "layer2": neutral_layer2, "layer3": neutral_layer3}
-    
-    # Both groups exist - compute actual fairness metrics
-    g0 = df[df['sensitive_group'] == 0]
-    g1 = df[df['sensitive_group'] == 1]
-
-    # Helper to safely get filtered mean
-    def safe_mean(df_group, filter_col, filter_val, target_col):
-        if len(df_group) == 0 or filter_col not in df_group.columns:
-            return 0
-        filtered = df_group[df_group[filter_col] == filter_val]
-        if len(filtered) == 0 or target_col not in filtered.columns:
-            return 0
-        return filtered[target_col].mean()
-
-    # Layer 1: SPD, DI, EOP, AOD
-    p1_g0 = g0['system_disclose'].mean() if len(g0) > 0 and 'system_disclose' in g0.columns else 0
-    p1_g1 = g1['system_disclose'].mean() if len(g1) > 0 and 'system_disclose' in g1.columns else 0
-    spd = p1_g1 - p1_g0
-    di = p1_g1 / p1_g0 if p1_g0 > 0 else 1.0  # Default to 1.0 (no disparity) instead of 999
-
-    tpr_g0 = safe_mean(g0, 'ground_truth_disclose', 1, 'system_disclose')
-    tpr_g1 = safe_mean(g1, 'ground_truth_disclose', 1, 'system_disclose')
-    eop = tpr_g1 - tpr_g0
-
-    fpr_g0 = safe_mean(g0, 'ground_truth_disclose', 0, 'system_disclose')
-    fpr_g1 = safe_mean(g1, 'ground_truth_disclose', 0, 'system_disclose')
-    aod = 0.5 * ((tpr_g1 - tpr_g0) + (fpr_g1 - fpr_g0))
-
-    # DEBUG: Print all intermediate formula values
-    print(f"\n[DEBUG] FORMULA INTERMEDIATE VALUES:")
-    print(f"  Group 0: n={len(g0)}, P(Ŷ=1|A=0)={p1_g0:.4f}, TPR_g0={tpr_g0:.4f}, FPR_g0={fpr_g0:.4f}")
-    print(f"  Group 1: n={len(g1)}, P(Ŷ=1|A=1)={p1_g1:.4f}, TPR_g1={tpr_g1:.4f}, FPR_g1={fpr_g1:.4f}")
-    print(f"  SPD = P(Ŷ=1|A=1) - P(Ŷ=1|A=0) = {p1_g1:.4f} - {p1_g0:.4f} = {spd:.4f}")
-    print(f"  DI  = P(Ŷ=1|A=1) / P(Ŷ=1|A=0) = {p1_g1:.4f} / {p1_g0:.4f} = {di:.4f}")
-    print(f"  EOP = TPR_g1 - TPR_g0 = {tpr_g1:.4f} - {tpr_g0:.4f} = {eop:.4f}")
-    print(f"  AOD = 0.5 * [(TPR_g1-TPR_g0) + (FPR_g1-FPR_g0)] = {aod:.4f}")
-
-    layer1 = {
-        "spd": float(spd), 
-        "di": float(di), 
-        "eop": float(eop), 
-        "aod": float(aod)
-    }
-
-    # Layer 2: FNRD, Predictive Parity (difference), Refusal Disparity
-    fnr_g0 = 1 - tpr_g0
-    fnr_g1 = 1 - tpr_g1
-    fnrd = fnr_g1 - fnr_g0
-
-    prec_g0 = safe_mean(g0, 'system_disclose', 1, 'ground_truth_disclose')
-    prec_g1 = safe_mean(g1, 'system_disclose', 1, 'ground_truth_disclose')
-    pred_parity = prec_g1 - prec_g0
-
-    refusal_g0 = 1 - p1_g0
-    refusal_g1 = 1 - p1_g1
-    rd = refusal_g1 - refusal_g0
-
-    layer2 = {
-        "fnrd": float(fnrd), 
-        "predictive_parity": float(pred_parity), 
-        "refusal_disparity": float(rd)
-    }
-
-    # Layer 3: Mutual Information Leakage (discrete MI between hatY and A)
-    mi = 0.0
-    try:
-        if 'system_disclose' in df.columns and 'sensitive_group' in df.columns:
-            joint = df.groupby(['system_disclose', 'sensitive_group']).size().unstack(fill_value=0)
-            joint_norm = joint / len(df)
-            p_hatY = joint_norm.sum(axis=1)
-            p_A = joint_norm.sum(axis=0)
-            for hatY in joint_norm.index:
-                for a in joint_norm.columns:
-                    p_ya = joint_norm.at[hatY, a]
-                    if p_ya > 0:
-                        mi += p_ya * np.log(p_ya / (p_hatY[hatY] * p_A[a]))
-            mi = max(0, mi)
-    except Exception:
-        mi = 0.0
-
-    # Counterfactual Fairness: placeholder
-    cf = 0.0
-
-    layer3 = {
-        "mutual_info_leakage": float(mi), 
-        "counterfactual_fairness": float(cf)
-    }
-
-    return {"layer1": layer1, "layer2": layer2, "layer3": layer3}
+    return 1 if r_score > u_score else 0 if u_score > r_score else hash(query) % 2
 
 def format_rag_citations(retrieved: list) -> list:
     """Format retrieved PDF chunks as proper citations"""
@@ -630,16 +492,23 @@ while True:
 
     t_response = datetime.now()
 
-    grounding = ollama_judge(GROUNDING_JUDGE.format(context=context, response=response))
-    lawfulness = ollama_judge(LAWFULNESS_JUDGE.format(context=context, response=response))
+    # --- 3-LAYER GROUNDING JUDGE ---
+    print("[GROUNDING] Analyzing 3-layer deterministic grounding stack...")
+    grounding_res = compute_grounding_3layer(response, context, retrieved, embedder, EMBED_MODEL)
+    grounding_score = grounding_res["score"]
+    halluc_rate = grounding_res["hallucination_rate"]
+    cit_cov = grounding_res["l1_citation_coverage"]
+    cos_sim = grounding_res["l2_cosine_similarity"]
+    supp_ratio = grounding_res["l3_support_ratio"]
+    
+    print(f"  - L1 Citation Coverage: {cit_cov:.2%}")
+    print(f"  - L2 Cosine Similarity: {cos_sim:.2f}")
+    print(f"  - L3 Claim Overlap: {supp_ratio:.2%}")
+    print(f"  - Final Grounding: {grounding_score:.2f}")
 
     gt_disclose = 0 if re.search(r'\b(mobile|address|salary|personal)\b', query.lower()) else 1
     sys_disclose = 0 if re.search(r'\b(exempt|cannot|refused|section 8)\b', response.lower()) else 1
 
-    citation = citation_coverage(response)
-    grounding_score = grounding.get("score", 0.7)
-    lawful_assess = lawfulness.get("assessment", "warning")
-    halluc_rate = 1.0 - grounding_score
     pii_det = pii_detected(query, response)
     source_div = len(set(r["doc"] for r in retrieved))
 
@@ -669,79 +538,39 @@ while True:
     print(f"  Group 0 count: {(df_fairness['sensitive_group'] == 0).sum()}")
     print(f"  Group 1 count: {(df_fairness['sensitive_group'] == 1).sum()}")
     print(f"  Current query: group={sensitive_group}, gt_disclose={gt_disclose}, sys_disclose={sys_disclose}")
-    # Compute all layers for fairness cohort
-    all_layers = compute_all_layers(df_fairness)
     
-    # =================== CALCULATE ALL 36 METRICS ===================
-    # 1. Environmental: Simple cost/GPU hours proxy
-    tokens = resp_data.get("prompt_eval_count", 0) + resp_data.get("eval_count", 0)
-    inf_cost = tokens * 0.00003
-    gpu_hours = 0.0001 * (latency_ms/1000) 
+    # =================== RTI ETHICS ENGINE (9 DIMENSIONS × 3 LAYERS) ===================
+    print("[ETHICS] Running 9-dimension dynamic audit protocol...")
     
-    # 2. UX: Readability (FK Grade Level)
-    words = len(re.findall(r'\w+', response))
-    sentences = max(1, response.count('.') + response.count('!') + response.count('?'))
-    syllables = len(re.findall(r'[aeiouy]+', response.lower()))
-    fk_score = 206.835 - 1.015*(words/sentences) - 84.6*(syllables/words) if words > 0 else 0
+    # Collect predictions/labels for fairness if they exist in history
+    all_preds = df_fairness['system_disclose'].values if not df_fairness.empty else np.array([sys_disclose])
+    all_labels = df_fairness['ground_truth_disclose'].values if not df_fairness.empty else np.array([gt_disclose])
+    all_groups = df_fairness['sensitive_group'].values if not df_fairness.empty else np.array([sensitive_group])
     
-    # 3. Performance & Other proxies
-    accuracy_proxy = grounding_score
-    recall_proxy = citation
+    # Build metrics DYNAMICALLY using the new calculators
+    structured_metrics = build_metrics_from_raw_data(
+        query=query,
+        response=response,
+        predictions=all_preds,
+        labels=all_labels,
+        sensitive_attr=all_groups,
+        latency_ms=latency_ms,
+        output_tokens=resp_data.get("eval_count", 0),
+        grounding_score=grounding_score
+    )
     
-    # =================== 9-DIMENSION AUDIT DATA ===================
-    structured_metrics = {
-        "fairness": {
-            **all_layers.get("layer1", {}),
-            "fnrd": all_layers.get("layer2", {}).get("fnrd", 0),
-            "pred_parity": all_layers.get("layer2", {}).get("predictive_parity", 0),
-            "refusal_disp": all_layers.get("layer2", {}).get("refusal_disparity", 0),
-            "counterfactual": 0.02, # Approximation
-            "mi_leakage": all_layers.get("layer3", {}).get("mutual_info_leakage", 0),
-            "note": all_layers.get("layer1", {}).get("note")
-        },
-        "drift": {
-            "psi": 0.05, "ks": 0.02,
-            "pred_drift": 0.01, "conf_drift": 0.01,
-            "emb_drift": 0.02
-        },
-        "environmental": {
-            "inf_cost": inf_cost, "gpu_hours": gpu_hours,
-            "compute_intensity": 0.4, "hardware_util": 0.95,
-            "cur": 0.8
-        },
-        "explainability": {
-            "confidence": 0.95, "fi": 0.9,
-            "counterfactual_dist": 0.8, "exp_stability": 0.95
-        },
-        "ux": {
-            "tcr": 1.0, "ftr": 0.05,
-            "dtc": 2, "cognitive_load": 0.2,
-            "readability_fk": fk_score
-        },
-        "legal": {
-            "lawfulness": 1.0 if lawful_assess == "pass" else 0.0,
-            "cvr": 1.0,
-            "proportionality": 0.9, "dpia": 1.0
-        },
-        "performance": {
-            "accuracy": accuracy_proxy, "recall": recall_proxy,
-            "group_f1": 0.88, "acc_lt": 0.85
-        },
-        "monitoring": {
-            "alc": 1.0, "sla": 1.0,
-            "pvr": 0.0, "irf": 1.0
-        },
-        "security": {
-            "adv_acc": 0.98, "pisr": 0.0,
-            "mir": 0.01, "pdr": 1.0
-        }
-    }
-    
-    # Run the protocol - returns EthicsResult object with exhaustive accessors
+    # Ensure RAG-specific details are mapped
+    structured_metrics["explainability"]["support_ratio"] = supp_ratio
+    structured_metrics["explainability"]["citation_coverage"] = cit_cov
+    structured_metrics["ux"]["readability_fk"] = compute_readability_fk(response)
+
+    # Run the protocol - returns EthicsResult with exhaustive accessors
     ethical_result: EthicsResult = ethics_engine.run_protocol(structured_metrics)
-    label = ethical_result.final_label
     
-    # Convert final label to numeric score for CSV compatibility
+    # PRINT FULL AUDIT TABLE (L1, L2, L3)
+    ethical_result.print_full_audit()
+    
+    label = ethical_result.final_label
     label_to_score = {"ETHICAL": 100.0, "CONDITIONALLY_ETHICAL": 70.0, "UNETHICAL": 0.0}
     overall_score = label_to_score.get(label, 50.0)
     
@@ -777,12 +606,12 @@ while True:
         "task_completed": 1 if sys_disclose == gt_disclose else 0,
         "hallucination_rate": halluc_rate,
         "context_grounding_score": grounding_score,
-        "citation_coverage": citation,
+        "citation_coverage": cit_cov,
         "source_diversity": source_div,
         "human_feedback_score": None,
         "norm_violation_count": 0,
         "contextual_harm_risk": ethical_result.layer2_risk_score,
-        "lawfulness_assessment": lawful_assess,
+        "lawfulness_assessment": "PASS" if ethical_result.get_l1_status("legal") == "PASS" else "FAIL",
         "pii_detected": pii_det,
         "pii_allowed": 0,
         "consent_required": 0,
