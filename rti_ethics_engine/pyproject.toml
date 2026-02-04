@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rti-ethics-engine"
-version = "1.0.0"
+version = "2.0.1"
 description = "India's first granular AI ethics framework for RTI applications (36 metrics, 9 dimensions)"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -37,7 +37,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules"
 ]
 dependencies = [
-    "numpy>=1.24.0"
+    "numpy>=1.24.0",
+    "scipy>=1.10.0"
 ]
 
 [project.optional-dependencies]
@@ -61,12 +62,14 @@ Issues = "https://github.com/rti-ethics/rti-ethics-engine/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rti_ethics_engine"]
+include = ["INPUTS_OUTPUTS.md"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "/rti_ethics_engine",
     "/tests",
     "/README.md",
+    "/INPUTS_OUTPUTS.md",
     "/LICENSE"
 ]
 

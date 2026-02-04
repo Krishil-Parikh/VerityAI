@@ -40,7 +40,19 @@ DIMENSION_NAMES = {
 
 @dataclass
 class DimensionResult:
-    """Result for a single ethical dimension with FULL metric access."""
+    """
+    Result for a single ethical dimension across the 3-layer protocol.
+    
+    Attributes:
+        key (str): Machine name (e.g., 'fairness')
+        name (str): Human-readable name (e.g., 'Bias & Fairness')
+        l1_status (str): Hard gate result ('PASS' or 'FAIL')
+        l1_reasons (list): Reasons for failure if any
+        l2_risk (float): Normalized risk score [0 to 1]
+        l2_indicators (list): Specific risk indicators detected
+        l3_evidence (dict): Forensic data bundle
+        raw_metrics (dict): Original calculated metric values
+    """
     key: str
     name: str
     l1_status: str
@@ -52,22 +64,28 @@ class DimensionResult:
     
     @property
     def passed_l1(self) -> bool:
+        """True if the dimension passed all Layer 1 hard gates."""
         return self.l1_status == "PASS"
     
     @property
     def failed_l1(self) -> bool:
+        """True if the dimension failed any Layer 1 hard gate."""
         return self.l1_status == "FAIL"
     
     def get_metric(self, metric_name: str, default: Any = None) -> Any:
-        """Get a specific raw metric value."""
+        """
+        Get a specific raw metric value by key.
+        
+        Example: dim.get_metric('spd') -> 0.05
+        """
         return self.raw_metrics.get(metric_name, default)
     
     def get_all_metrics(self) -> Dict[str, Any]:
-        """Get all raw metrics for this dimension."""
+        """Returns a copy of all raw metrics for this dimension."""
         return self.raw_metrics.copy()
     
     def format_l1_output(self) -> str:
-        """Format L1 gate result for display."""
+        """Format L1 gate result for a terminal or audit log."""
         icon = "✅" if self.passed_l1 else "❌"
         status_text = f"{icon} L1 {self.l1_status}"
         if self.l1_reasons:
@@ -76,7 +94,7 @@ class DimensionResult:
         return status_text
     
     def format_l2_output(self) -> str:
-        """Format L2 risk score for display."""
+        """Format L2 risk score as a percentage with health icon."""
         risk_pct = self.l2_risk * 100
         if self.l2_risk < 0.3:
             icon = "🟢"
@@ -87,12 +105,12 @@ class DimensionResult:
         return f"{icon} L2 Risk: {risk_pct:.1f}%"
     
     def format_l3_output(self) -> str:
-        """Format L3 evidence for display."""
+        """Format L3 evidence explanation."""
         explanation = self.l3_evidence.get("explanation", "No evidence.")
         return f"📋 L3: {explanation}"
     
     def format_metrics_table(self) -> str:
-        """Format all raw metrics as a table."""
+        """Format all raw metrics as a readable indented block."""
         lines = []
         for k, v in self.raw_metrics.items():
             if isinstance(v, float):
@@ -102,6 +120,7 @@ class DimensionResult:
         return "\n".join(lines)
     
     def to_dict(self) -> Dict[str, Any]:
+        """Convert result to a serializable dictionary."""
         return {
             "key": self.key,
             "name": self.name,
@@ -117,15 +136,19 @@ class DimensionResult:
 @dataclass
 class EthicsResult:
     """
-    Complete ethics evaluation result with EXHAUSTIVE accessors.
+    Complete audit bundle containing evaluation for all 9 dimensions.
     
-    Access patterns:
-    - result.final_label                         # "ETHICAL"
-    - result.s_llm                               # 0.92
-    - result.get_l1_metric("fairness", "spd")   # 0.02
-    - result.get_l2_risk("legal")               # 0.0
-    - result.get_l3_evidence("security")        # {"explanation": "..."}
-    - result.print_full_audit()                 # Prints everything
+    Attributes:
+        final_label (str): Decision label ('ETHICAL', 'CONDITIONALLY_ETHICAL', 'UNETHICAL')
+        layer1_status (str): Aggregated L1 status
+        layer2_risk_score (float): Total weighted risk across all dimensions
+        s_llm (float): Final balanced score [0 to 1] where 1.0 is perfect ethics
+        risk_band (str): Final risk classification ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+        required_action (str): Explicit action needed (e.g. 'BLOCK_AND_REVIEW')
+        audit_id (str): Unique tracking ID for the audit
+        risk_vector (dict): Map of dimension names to their individual risk scores
+        dimension_results (dict): Map of keys to full DimensionResult objects
+        layer3_evidence (dict): Map of keys to forensic evidence bundles
     """
     
     final_label: str

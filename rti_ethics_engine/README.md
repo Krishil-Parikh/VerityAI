@@ -1,9 +1,11 @@
-# RTI Ethics Engine
+# RTI Ethics Engine (v2.0.0)
 
-**India's first granular AI ethics framework for RTI applications** - A production-ready Python package implementing 36 metrics across 9 ethical dimensions with granular formula access.
+**India's first granular AI ethics framework for RTI applications** - A production-ready Python package implementing 36 metrics across 9 ethical dimensions with granular formula access and dynamic data computation.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
 
 ## 🚀 Installation
 
@@ -11,131 +13,96 @@
 pip install rti-ethics-engine
 ```
 
-Or install from source:
+## ⚡ Quick Start (Dynamic Mode)
 
-```bash
-git clone https://github.com/rti-ethics/rti-ethics-engine.git
-cd rti-ethics-engine
-pip install -e .
-```
-
-## ⚡ Quick Start
+The recommended way to use the engine is to compute metrics directly from your application data:
 
 ```python
-from rti_ethics_engine import evaluate
+import numpy as np
+from rti_ethics_engine import evaluate_from_raw
 
-# Define your metrics
-metrics = {
-    "fairness": {"spd": 0.02, "di": 1.0, "eop": 0.05, "aod": 0.03},
-    "drift": {"psi": 0.1, "ks": 0.02},
-    "legal": {"lawfulness": 1.0, "cvr": 0.98},
-    "performance": {"accuracy": 0.92, "recall": 0.88},
-    "explainability": {"confidence": 0.85, "fi": 0.3},
-    "security": {"adv_acc": 0.8, "pisr": 0.02},
-    "monitoring": {"alc": 0.98, "sla": 0.995},
-    "ux": {"tcr": 0.92, "ftr": 0.08},
-    "environmental": {"inf_cost": 0.02, "gpu_hours": 0.05}
-}
+# 1. Prepare your data
+query = "What is the budget for the Metro project?"
+response = "The budget for the Metro project is 5000 Crores..."
+predictions = np.array([1, 1, 0, 1])  # Model predictions
+labels = np.array([1, 1, 1, 1])       # Ground truth
+sensitive_attr = np.array([0, 1, 0, 1]) # Demographic group (e.g. Urban/Rural)
 
-# Evaluate
-result = evaluate(metrics)
+# 2. Evaluate with one call
+result = evaluate_from_raw(
+    query=query,
+    response=response,
+    predictions=predictions,
+    labels=labels,
+    sensitive_attr=sensitive_attr,
+    latency_ms=450.0,
+    grounding_score=0.92
+)
 
-# Get the decision
-print(result.final_label)    # "ETHICAL"
-print(result.s_llm)          # 0.9234 (LLM Ethics Score)
-print(result.risk_band)      # "LOW"
+# 3. Get results
+print(f"Label: {result.final_label}")  # "ETHICAL"
+print(f"S_LLM Score: {result.s_llm}")  # 0.942
+print(f"Risk Band: {result.risk_band}") # "LOW"
 ```
 
-## 🎯 Granular Metric Access
+## 📊 The 3-Layer Audit Protocol
 
-The killer feature - access ANY formula value at ANY layer:
+The RTI Ethics Engine uses a rigorous 3-layer protocol for every dimension:
+
+1.  **Layer 1: Hard Gates (L1)** - Pass/Fail compliance checks (e.g., Statistical Parity < 0.1).
+2.  **Layer 2: Risk Scoring (L2)** - Normalized risk vectors weighted by policy importance.
+3.  **Layer 3: Forensic Evidence (L3)** - Detailed context and reasoning for the scores.
+
+### Granular Access
 
 ```python
-# Access specific L1 formula values
-spd = result.get_l1_metric("fairness", "spd")      # 0.02
-psi = result.get_l1_metric("drift", "psi")         # 0.1
-accuracy = result.get_l1_metric("performance", "accuracy")  # 0.92
+# Check if a specific dimension passed its hard gates
+if result.get_l1_status("fairness") == "FAIL":
+    print(f"Fairness fail reasons: {result.get_l1_reasons('fairness')}")
 
-# Access L2 risk scores
-fairness_risk = result.get_l2_risk("fairness")     # 0.12
-legal_risk = result.get_l2_risk("legal")           # 0.00
+# Get granular metric values (36 metrics available)
+spd = result.get_l1_metric("fairness", "spd")
+psi = result.get_l1_metric("drift", "psi")
 
-# Access L3 forensic evidence
-explanation = result.get_l3_evidence("legal")["explanation"]
-
-# Aggregation helpers
-failed_dims = result.get_failed_dims()   # ["Legal Compliance"]
-pass_rate = result.l1_pass_rate()        # 0.889 (8/9 passed)
-
-# Audit table for CIC compliance
-result.print_audit_table()
-# RTI-2026035174555 | ETHICAL | S_LLM=0.92
-# ✅ Legal Compliance: L2=0.02
-# ✅ Bias & Fairness: L2=0.05
-# ...
+# Export complete audit trail
+audit_json = result.to_json()
 ```
 
-## 📊 9 Ethical Dimensions
+## 🏗️ 9 Ethical Dimensions
 
-| Dimension            | L1 Metrics          | Description            |
-| -------------------- | ------------------- | ---------------------- |
-| **Legal Compliance** | lawfulness, cvr     | RTI Act 2005 alignment |
-| **Bias & Fairness**  | spd, di, eop, aod   | Demographic equity     |
-| **Explainability**   | confidence, fi      | Model interpretability |
-| **Security**         | adv_acc, pisr       | Adversarial robustness |
-| **Monitoring**       | alc, sla            | Audit trail integrity  |
-| **Performance**      | accuracy, recall    | Statistical accuracy   |
-| **Human-AI UX**      | tcr, ftr            | User friction          |
-| **Drift**            | psi, ks             | Model stability        |
-| **Environmental**    | inf_cost, gpu_hours | Carbon footprint       |
+| Dimension            | Description                          | Key Metrics                     |
+| -------------------- | ------------------------------------ | ------------------------------- |
+| **Legal Compliance** | RTI Act 2005 & Data Policy alignment | Lawfulness, Consent Validity    |
+| **Bias & Fairness**  | Demographic equity across groups     | SPD, DI, EOP, AOD               |
+| **Explainability**   | Transparency & Model Confidence      | FI Sum, Counterfactual Distance |
+| **Security**         | Robustness against prompt injection  | PISR, Adversarial Accuracy      |
+| **Monitoring**       | Audit trail & SLA integrity          | Audit Completeness, SLA rate    |
+| **Performance**      | Statistical accuracy of responses    | Recall, Group-F1, Accuracy      |
+| **Human-AI UX**      | User friction and frustration levels | TCR, Cognitive Load             |
+| **Drift**            | Model/Data stability over time       | PSI, KS-Statistic               |
+| **Environment**      | Carbon footprint & compute cost      | GPU Hours, Inference Cost       |
 
-## 🏗️ Architecture
+## 📖 Documentation
 
-```
-rti_ethics_engine/
-├── __init__.py      # Public API
-├── config.py        # Thresholds & weights
-├── dimensions.py    # 9 dimension evaluators
-├── core.py          # EthicsEngine orchestrator
-├── results.py       # EthicsResult with accessors
-└── metrics.py       # Computation helpers
-```
+For detailed input/output schemas and advanced configuration, see:
 
-## 📖 API Reference
-
-### `evaluate(metrics: dict) -> EthicsResult`
-
-Quick evaluation entrypoint.
-
-### `EthicsEngine`
-
-Full engine with `run_protocol()` method.
-
-### `EthicsResult`
-
-Result object with:
-
-- `final_label`: "ETHICAL" / "CONDITIONALLY_ETHICAL" / "UNETHICAL"
-- `s_llm`: LLM Ethics Score [0, 1]
-- `risk_band`: "LOW" / "MEDIUM" / "HIGH" / "CRITICAL"
-- `get_l1_metric(dim, metric)`: Access any L1 formula value
-- `get_l2_risk(dim)`: Get dimension risk score
-- `get_l3_evidence(dim)`: Get forensic evidence
-- `get_failed_dims()`: List failed dimensions
-- `l1_pass_rate()`: Fraction of L1 passes
-- `to_json()`: Export as JSON
+- [API Reference (INPUTS_OUTPUTS.md)](https://github.com/Krishil-Parikh/bazinga_tsec_hacks/blob/krishil/rti_ethics_engine/INPUTS_OUTPUTS.md)
+- [Mathematical Manifest (calculators.py)](https://github.com/Krishil-Parikh/bazinga_tsec_hacks/blob/krishil/rti_ethics_engine/rti_ethics_engine/calculators.py)
 
 ## 🧪 Testing
 
 ```bash
-pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-## 📄 License
+## 🇮🇳 Why RTI Ethics Engine?
 
-MIT License - See [LICENSE](LICENSE) for details.
+Designed specifically for **Right to Information (RTI)** workflows, it ensures that AI systems responding to citizen queries are:
 
-## 🇮🇳 Made for India
+- **Legally Sound:** Compliant with Section 4/8 of the RTI Act.
+- **Fair:** No bias between rural/urban or language variations.
+- **Auditable:** Providing forensic evidence for Central Information Commission (CIC) audits.
 
-Designed specifically for RTI Act 2005 compliance and CIC audit requirements.
+---
+
+**License:** MIT | **Support:** [github.com/rti-ethics/rti-ethics-engine](https://github.com/rti-ethics/rti-ethics-engine)
