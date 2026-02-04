@@ -5,10 +5,17 @@ import os
 import random
 from datetime import datetime
 
-# ================== CONFIG ==================
-CSV_FILE = "conversations_metrics.csv"
-QUERIES_CSV = "generated_queries.csv"
-FAIRNESS_CSV = "fairness_data.csv"  # NEW: Separate fairness data file
+# ================== ROBUST PATHS ==================
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(SCRIPT_DIR)
+DATA_DIR = os.path.join(BACKEND_DIR, "data")
+
+# Ensure directory exists
+os.makedirs(DATA_DIR, exist_ok=True)
+
+CSV_FILE = os.path.join(DATA_DIR, "conversations_metrics.csv")
+QUERIES_CSV = os.path.join(DATA_DIR, "generated_queries.csv")
+FAIRNESS_CSV = os.path.join(DATA_DIR, "fairness_data.csv")
 MODEL = "llama3"
 
 # EXPANDED: 60 base queries for 600+ data points

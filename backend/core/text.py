@@ -1,7 +1,7 @@
-import ollama
-import pandas as pd
-import json
 import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+import ollama
 import re
 import time
 from datetime import datetime
@@ -14,7 +14,7 @@ from scipy.stats import entropy  # For KL divergence in Layer 2, if needed; pip 
 
 # Import from the new RTI Ethics Engine package (production-level)
 import sys
-sys.path.insert(0, r"c:\Users\krish\OneDrive\Desktop\bazinga_tsec_hacks\rti_ethics_engine")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../rti_ethics_engine")))
 from rti_ethics_engine import (
     EthicsEngine, EthicsResult, 
     build_metrics_from_raw_data,
@@ -28,15 +28,24 @@ ethics_engine = EthicsEngine()
 # Initialize dynamic thresholds
 L1_THRESHOLDS = get_l1_thresholds()
 
-# ================== CONFIG ==================
-METRICS_CSV = "conversations_metrics.csv"
-PDF_DIR = "./data"  
+# ================== ROBUST PATHS ==================
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(SCRIPT_DIR)
+DATA_DIR = os.path.join(BACKEND_DIR, "data")
+DB_DIR = os.path.join(BACKEND_DIR, "db")
+
+# Ensure directories exist
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(DB_DIR, exist_ok=True)
+
+METRICS_CSV = os.path.join(DATA_DIR, "conversations_metrics.csv")
+PDF_DIR = DATA_DIR
 BOT_MODEL = "llama3"
 JUDGE_MODEL = "llama3"
 EMBED_MODEL = "all-MiniLM-L6-v2"
-PDF_FILES = ["rti_act_2005.pdf", "CSMOP_0_0.pdf", "MainReport_1_0.pdf"]
 CHUNK_SIZE = 600
 TOP_K = 5
+PERSIST_DIRECTORY = os.path.join(DB_DIR, "chroma_rti_db")
 
 # ================== ACADEMIC & LEGAL CITATIONS ==================
 # These citations validate each metric for research papers and government audits
@@ -149,7 +158,7 @@ embedder = SentenceTransformer(EMBED_MODEL)
 chroma_client = chromadb.Client(Settings(
     anonymized_telemetry=False,
     is_persistent=True,
-    persist_directory="./chroma_rti_db"
+    persist_directory=PERSIST_DIRECTORY
 ))
 
 # Get or create collection with cosine similarity
@@ -181,10 +190,11 @@ def build_rag_index():
     all_ids = []
     all_metadatas = []
     
-    for pdf_file in PDF_FILES:
+    # Dynamically take all PDFs in data directory
+    pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith(".pdf")]
+    
+    for pdf_file in pdf_files:
         path = os.path.join(PDF_DIR, pdf_file)
-        if not os.path.exists(path):
-            continue
         try:
             doc = fitz.open(path)
             doc_id = pdf_file
@@ -517,7 +527,7 @@ while True:
     fairness_cols = ["sensitive_group", "ground_truth_disclose", "system_disclose"]
     
     # Create or load existing fairness data
-    fairness_csv = "fairness_data.csv"
+    fairness_csv = "../data/fairness_data.csv"
     if os.path.exists(fairness_csv):
         df_fairness = pd.read_csv(fairness_csv)
     else:

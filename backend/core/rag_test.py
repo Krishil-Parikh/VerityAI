@@ -22,7 +22,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Import RTI Ethics Engine Package (Production Level)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-sys.path.insert(0, r"c:\Users\krish\OneDrive\Desktop\bazinga_tsec_hacks\rti_ethics_engine")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../rti_ethics_engine")))
 from rti_ethics_engine import (
     EthicsEngine, 
     EthicsResult, 
@@ -79,7 +79,9 @@ prompt_template = PromptTemplate.from_template(system_prompt)
 # ───────────────────────────────────────────────────────────────
 # Documents loading
 # ───────────────────────────────────────────────────────────────
-DATA_FOLDER = "./data"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(SCRIPT_DIR)
+DATA_FOLDER = os.path.join(BACKEND_DIR, "data")
 
 # Create data folder if it doesn't exist
 if not os.path.exists(DATA_FOLDER):
@@ -105,7 +107,8 @@ else:
 # Vector store
 # ───────────────────────────────────────────────────────────────
 embeddings = MistralAIEmbeddings(model="mistral-embed")
-persist_directory = "./rti_chroma_db_mistral"
+persist_directory = os.path.join(BACKEND_DIR, "db", "rti_chroma_db_mistral")
+os.makedirs(os.path.dirname(persist_directory), exist_ok=True)
 
 vectorstore = Chroma.from_documents(
     documents=documents, embedding=embeddings, persist_directory=persist_directory

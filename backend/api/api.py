@@ -24,7 +24,7 @@ from datetime import datetime
 from sentence_transformers import SentenceTransformer
 
 # Import from the RTI Ethics Engine package (dynamic version)
-sys.path.insert(0, r"c:\Users\krish\OneDrive\Desktop\bazinga_tsec_hacks\rti_ethics_engine")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../rti_ethics_engine")))
 from rti_ethics_engine import (
     EthicsEngine, EthicsResult,
     get_l1_thresholds, get_dimension_weights, get_risk_thresholds,

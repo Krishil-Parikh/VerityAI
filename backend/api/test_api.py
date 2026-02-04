@@ -319,7 +319,7 @@ def test_dynamic_computation():
     print("🔧 VERIFYING DYNAMIC COMPUTATION")
     print("="*70)
     
-    sys.path.insert(0, r"c:\Users\krish\OneDrive\Desktop\bazinga_tsec_hacks\rti_ethics_engine")
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../rti_ethics_engine")))
     from rti_ethics_engine import compute_spd, compute_readability_fk, compute_accuracy
     
     # Test 1: Different inputs → different outputs
