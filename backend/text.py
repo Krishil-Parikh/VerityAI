@@ -664,21 +664,25 @@ while True:
     audit_id = ethical_decision["audit_id"]
     
     print(f"VERDICT: {label} | RISK BAND: {band}")
-    print(f"AUDIT ID: {audit_id}")
+    print(f"AUDIT ID: {audit_id} | S_LLM: {ethical_decision.get('s_llm', 0.0):.4f}")
     print(f"ACTION REQUIRED: {ethical_decision['required_action']}")
     print(f"{'-'*80}")
 
-    # Combined Layer 1 & 2 Granular Status
-    print(f"DIMENSION-LEVEL AUDIT (L1 Gate -> L2 Risk):")
+    # Step 1 & 2 Logic Display
+    print(f"DIMENSION-LEVEL AUDIT (Step 0-2 Logic):")
     for audit_entry in ethical_decision["layer3_evidence"]["audit_trail"]:
         print(f"  {audit_entry}")
 
-    print(f"\nTOTAL AGGREGATED RISK: {ethical_decision['layer2_risk_score']:.2f}/1.0 (from passing dimensions)")
+    print(f"\nTOTAL RISK SCORE: {ethical_decision['layer2_risk_score']:.2f}/1.0")
     l2_icon = "🟢" if band == "LOW" else "🟡" if band == "MEDIUM" else "🔴"
     print(f"RISK ASSESSMENT: {l2_icon} {band}")
+    print(f"S_LLM SCORE: {ethical_decision.get('s_llm', 0.0):.4f}")
+
+    print(f"\nRISK VECTOR [R_1...R_9]:")
+    print(f"  {json.dumps(ethical_decision.get('risk_vector', {}), indent=2)}")
 
     # Layer 3 Status
-    print(f"LAYER 3 (FORENSIC BUNDLE): 📂 Auditor-Ready Spec (36/36 Metrics)")
+    print(f"\nLAYER 3 (FORENSIC BUNDLE): 📂 Auditor-Ready Spec (36/36 Metrics)")
     for dim_key, dim_obj in ethics_engine.dimensions.items():
         evidence = ethical_decision["layer3_evidence"]["explanations"].get(dim_key, {})
         explanation = evidence.get("explanation", "Forensic entry complete.")

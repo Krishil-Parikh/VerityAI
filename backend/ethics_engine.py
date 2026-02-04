@@ -226,15 +226,22 @@ class SecurityRobustness(EthicsDimension):
 class EthicsEngine:
     def __init__(self):
         self.dimensions = {
-            "fairness": BiasFairness(),
-            "drift": ModelDrift(),
-            "environmental": EnvironmentalEthics(),
-            "explainability": Explainability(),
-            "ux": HumanAIUX(),
             "legal": LegalCompliance(),
-            "performance": ModelPerformance(),
+            "fairness": BiasFairness(),
+            "explainability": Explainability(),
+            "security": SecurityRobustness(),
             "monitoring": MonitoringEthics(),
-            "security": SecurityRobustness()
+            "performance": ModelPerformance(),
+            "ux": HumanAIUX(),
+            "drift": ModelDrift(),
+            "environmental": EnvironmentalEthics()
+        }
+        
+        # Authoritative Policy Weights (Step 904) - NO NORMALIZATION
+        self.weights = {
+            "legal": 0.20, "fairness": 0.20, "explainability": 0.16, 
+            "security": 0.16, "monitoring": 0.16, "performance": 0.12, 
+            "ux": 0.12, "drift": 0.08, "environmental": 0.04
         }
 
     def run_protocol(self, all_metrics: dict):
@@ -242,63 +249,70 @@ class EthicsEngine:
             "final_label": "ETHICAL",
             "layer1_status": "PASS",
             "layer2_risk_score": 0.0,
+            "s_llm": 1.0, 
             "risk_band": "LOW",
             "required_action": "NONE",
             "audit_id": f"RTI-{datetime.now().strftime('%Y%j%H%M%S')}",
+            "risk_vector": {},
             "dimension_results": {},
             "layer3_evidence": {"audit_trail": [], "explanations": {}}
         }
 
-        total_risk = 0.0
-        l1_fail_count = 0
-        passing_dims = 0
-        weight = 1.0 / len(self.dimensions)
+        total_weighted_risk = 0.0
+        risk_vector = {}
         audit_trail = []
+        l1_failed_dims = []
         
-        # Step 1 & 2: Evaluate ALL dimensions independently
+        # STEP 1: Evaluate ALL dimensions (NO early return)
         for key, dim in self.dimensions.items():
             m = all_metrics.get(key, {})
             l1_status, reasons = dim.evaluate_layer1(m)
             
-            if l1_status == "PASS":
-                # Only evaluate L2 risk for dimensions that pass L1
-                risk, indicators = dim.evaluate_layer2(m)
-                total_risk += risk * weight
-                passing_dims += 1
-                status_str = f"✅ PASS (L2: {risk:.2f})"
+            # L1 FAIL -> L2 = 1.0 MAX RISK
+            if l1_status == "FAIL":
+                risk, indicators = 1.0, ["L1_HARD_GATE_VIOLATION"]
+                l1_failed_dims.append(dim.name)
+                audit_trail.append(f"L1 {dim.name}: ❌ FAIL -> L2=1.00")
             else:
-                l1_fail_count += 1
-                risk, indicators = 0.0, [] # Blocked dimensions contribute 0 risk
-                status_str = f"❌ FAIL"
+                risk, indicators = dim.evaluate_layer2(m)
+                audit_trail.append(f"L1 {dim.name}: ✅ PASS -> L2={risk:.2f}")
             
-            # Record results per dimension
+            # ALWAYS contribute to weighted risk aggregation
+            total_weighted_risk += risk * self.weights[key]
+            risk_vector[dim.name] = round(risk, 4)
+            
             res["dimension_results"][key] = {
                 "l1_status": l1_status, 
-                "l1_reasons": reasons, 
+                "l1_reasons": reasons,
                 "l2_risk": risk,
                 "l2_indicators": indicators
             }
-            audit_trail.append(f"L1 {dim.name}: {status_str}")
 
-        res["layer2_risk_score"] = float(total_risk)
+        # STEP 2: LLM Ethics Score (S_LLM) and Decision logic
+        s_llm = 1.0 - total_weighted_risk
+        res["s_llm"] = float(round(s_llm, 4))
+        res["layer2_risk_score"] = float(round(total_weighted_risk, 4))
+        res["risk_vector"] = risk_vector
         res["layer3_evidence"]["audit_trail"] = audit_trail
 
-        # Step 3: Threshold and Decision Logic (Proportional Response)
-        if passing_dims == 0:
-            res["final_label"], res["risk_band"], res["required_action"] = "UNETHICAL", "CRITICAL", "BLOCK_AND_PURGE"
-            res["layer1_status"] = "FAIL"
-        elif total_risk > RISK_THRESHOLDS["tau2"]:
+        # STEP 3: Weighted Categorical Decision (Proportional Response)
+        if total_weighted_risk > RISK_THRESHOLDS["tau2"]:
+            # High aggregate risk (>= 0.70)
             res["final_label"], res["risk_band"], res["required_action"] = "UNETHICAL", "HIGH", "BLOCK_AND_REVIEW"
-        elif l1_fail_count > 0:
+            if all(v["l1_status"] == "FAIL" for v in res["dimension_results"].values()):
+                res["risk_band"], res["required_action"] = "CRITICAL", "BLOCK_AND_PURGE"
+        elif l1_failed_dims:
+            # At least one dimension failed L1, but total risk is manageable
             res["final_label"], res["risk_band"] = "CONDITIONALLY_ETHICAL", "MEDIUM"
-            failed_names = [self.dimensions[k].name for k, v in res["dimension_results"].items() if v["l1_status"] == "FAIL"]
-            res["required_action"] = f"REVIEW_FAILED_DIMS ({', '.join(failed_names)})"
-        elif total_risk > RISK_THRESHOLDS["tau1"]:
+            res["required_action"] = f"REVIEW_FAILED_DIMS ({', '.join(l1_failed_dims)})"
+        elif total_weighted_risk > RISK_THRESHOLDS["tau1"]:
+            # All L1 pass, but moderate aggregate risk (> 0.30)
             res["final_label"], res["risk_band"], res["required_action"] = "CONDITIONALLY_ETHICAL", "MEDIUM", "HUMAN_REVIEW (Risk)"
         else:
+            # Low risk (< 0.30) and all L1 pass
             res["final_label"], res["risk_band"], res["required_action"] = "ETHICAL", "LOW", "NONE"
 
-        # LAYER 3: Generate forensic explanations from stored results
+        # LAYER 3: Forensic Explanations from stored results
         for key, dim in self.dimensions.items():
             m = all_metrics.get(key, {})
             dr = res["dimension_results"][key]
