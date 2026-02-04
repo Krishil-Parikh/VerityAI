@@ -10,7 +10,11 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import fitz  # PyMuPDF
 from scipy.stats import entropy  # For KL divergence in Layer 2, if needed; pip install scipy
-from ethics_engine import EthicsEngine
+
+# Import from the new RTI Ethics Engine package (production-level)
+import sys
+sys.path.insert(0, r"c:\Users\krish\OneDrive\Desktop\bazinga_tsec_hacks\rti_ethics_engine")
+from rti_ethics_engine import EthicsEngine, EthicsResult, L1_THRESHOLDS, DIMENSION_WEIGHTS
 
 # Initialize Ethics Engine
 ethics_engine = EthicsEngine()
@@ -591,23 +595,23 @@ while True:
         }
     }
     
-    # Run the protocol
-    ethical_decision = ethics_engine.run_protocol(structured_metrics)
-    label = ethical_decision["final_label"]
+    # Run the protocol - returns EthicsResult object with exhaustive accessors
+    ethical_result: EthicsResult = ethics_engine.run_protocol(structured_metrics)
+    label = ethical_result.final_label
     
     # Convert final label to numeric score for CSV compatibility
     label_to_score = {"ETHICAL": 100.0, "CONDITIONALLY_ETHICAL": 70.0, "UNETHICAL": 0.0}
     overall_score = label_to_score.get(label, 50.0)
     
-    # Dimension scores (mapping to 9-dimension engine results)
+    # Dimension scores using the new granular accessors
     dim_scores = {
-        "bias_fairness_score": round(100 * (1 - ethical_decision.get("dimension_results", {}).get("fairness", {}).get("l2_risk", 0)), 1),
-        "data_grounding_drift_score": round(100 * (1 - ethical_decision.get("dimension_results", {}).get("drift", {}).get("l2_risk", 0)), 1),
-        "explainability_transparency_score": round(100 * (1 - ethical_decision.get("dimension_results", {}).get("explainability", {}).get("l2_risk", 0)), 1),
-        "ethical_alignment_score": round(100 * (1 - ethical_decision.get("dimension_results", {}).get("legal", {}).get("l2_risk", 0)), 1),
-        "human_control_score": round(100 * (1 - ethical_decision.get("dimension_results", {}).get("ux", {}).get("l2_risk", 0)), 1),
-        "legal_compliance_score": 100 if ethical_decision.get("dimension_results", {}).get("legal", {}).get("l1_status") == "PASS" else 0,
-        "security_robustness_score": round(100 * (1 - ethical_decision.get("dimension_results", {}).get("security", {}).get("l2_risk", 0)), 1),
+        "bias_fairness_score": round(100 * (1 - ethical_result.get_l2_risk("fairness")), 1),
+        "data_grounding_drift_score": round(100 * (1 - ethical_result.get_l2_risk("drift")), 1),
+        "explainability_transparency_score": round(100 * (1 - ethical_result.get_l2_risk("explainability")), 1),
+        "ethical_alignment_score": round(100 * (1 - ethical_result.get_l2_risk("legal")), 1),
+        "human_control_score": round(100 * (1 - ethical_result.get_l2_risk("ux")), 1),
+        "legal_compliance_score": 100 if ethical_result.get_l1_status("legal") == "PASS" else 0,
+        "security_robustness_score": round(100 * (1 - ethical_result.get_l2_risk("security")), 1),
         "response_quality_score": round(grounding_score * 100, 1)
     }
 
@@ -623,7 +627,7 @@ while True:
         "ai_response": response,
         "rag_documents": rag_docs,
         "rag_sections": rag_sections,
-        "safety_flag": ethical_decision["final_label"],
+        "safety_flag": ethical_result.final_label,
         "error_code": "",
         "overall_ethical_score": round(overall_score, 1),
         **dim_scores,
@@ -635,7 +639,7 @@ while True:
         "source_diversity": source_div,
         "human_feedback_score": None,
         "norm_violation_count": 0,
-        "contextual_harm_risk": ethical_decision["layer2_risk_score"],
+        "contextual_harm_risk": ethical_result.layer2_risk_score,
         "lawfulness_assessment": lawful_assess,
         "pii_detected": pii_det,
         "pii_allowed": 0,
@@ -653,50 +657,79 @@ while True:
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     df.to_csv(METRICS_CSV, index=False)
 
-    # =================== OUTPUT: Structured Ethical Decision ===================
-    print(f"\n{'='*80}")
-    print("⚖️  ETHICAL DECISION PROTOCOL (3-LAYER AUDIT)")
-    print(f"{'='*80}")
+    # =================== OUTPUT: EXHAUSTIVE 3-LAYER AUDIT (Using Package) ===================
+    # Use the package's built-in exhaustive output
+    ethical_result.print_full_audit()
     
-    # Header Info
-    label = ethical_decision["final_label"]
-    band = ethical_decision["risk_band"]
-    audit_id = ethical_decision["audit_id"]
+    # =================== ADDITIONAL: GRANULAR L1 METRIC VALUES ===================
+    print("\n" + "=" * 80)
+    print("📊 GRANULAR L1 FORMULA VALUES (Direct Package Access)")
+    print("=" * 80)
+    print(f"\n[FAIRNESS METRICS - Layer 1]")
+    print(f"  SPD (Statistical Parity Difference):    {ethical_result.spd:.4f}  | Threshold: ±{L1_THRESHOLDS['fairness']['spd']}")
+    print(f"  DI  (Disparate Impact):                 {ethical_result.di:.4f}   | Range: [{L1_THRESHOLDS['fairness']['di_min']}, {L1_THRESHOLDS['fairness']['di_max']}]")
+    print(f"  EOP (Equal Opportunity Diff):           {ethical_result.eop:.4f}  | Threshold: ±{L1_THRESHOLDS['fairness']['eop']}")
+    print(f"  AOD (Average Odds Difference):          {ethical_result.aod:.4f}  | Threshold: ±{L1_THRESHOLDS['fairness']['aod']}")
     
-    print(f"VERDICT: {label} | RISK BAND: {band}")
-    print(f"AUDIT ID: {audit_id} | S_LLM: {ethical_decision.get('s_llm', 0.0):.4f}")
-    print(f"ACTION REQUIRED: {ethical_decision['required_action']}")
-    print(f"{'-'*80}")
-
-    # Step 1 & 2 Logic Display
-    print(f"DIMENSION-LEVEL AUDIT (Step 0-2 Logic):")
-    for audit_entry in ethical_decision["layer3_evidence"]["audit_trail"]:
-        print(f"  {audit_entry}")
-
-    print(f"\nTOTAL RISK SCORE: {ethical_decision['layer2_risk_score']:.2f}/1.0")
-    l2_icon = "🟢" if band == "LOW" else "🟡" if band == "MEDIUM" else "🔴"
-    print(f"RISK ASSESSMENT: {l2_icon} {band}")
-    print(f"S_LLM SCORE: {ethical_decision.get('s_llm', 0.0):.4f}")
-
-    print(f"\nRISK VECTOR [R_1...R_9]:")
-    print(f"  {json.dumps(ethical_decision.get('risk_vector', {}), indent=2)}")
-
-    # Layer 3 Status
-    print(f"\nLAYER 3 (FORENSIC BUNDLE): 📂 Auditor-Ready Spec (36/36 Metrics)")
-    for dim_key, dim_obj in ethics_engine.dimensions.items():
-        evidence = ethical_decision["layer3_evidence"]["explanations"].get(dim_key, {})
-        explanation = evidence.get("explanation", "Forensic entry complete.")
-        print(f"  ├─ {dim_obj.name}:")
-        print(f"  │  └─ {explanation}")
+    print(f"\n[DRIFT METRICS - Layer 1]")
+    print(f"  PSI (Population Stability Index):       {ethical_result.psi:.4f}  | Threshold: ≤{L1_THRESHOLDS['drift']['psi']}")
+    print(f"  KS  (Kolmogorov-Smirnov):               {ethical_result.ks:.4f}   | Threshold: ≤{L1_THRESHOLDS['drift']['ks']}")
     
-    # Final Summary Alert
-    if label == "UNETHICAL":
-        print(f"\n🚨 [CRITICAL] PROTOCOL BREACHED - OUTPUT BLOCKED 🚨")
-    elif label == "CONDITIONALLY_ETHICAL":
-        print(f"\n⚠️  [WARNING] PARTIAL COMPLIANCE - HUMAN REVIEW REQUIRED ⚠️")
-    else:
-        print(f"\n✅ [PASS] ETHICAL COMPLIANCE VERIFIED")
-    print(f"{'='*80}")
+    print(f"\n[LEGAL METRICS - Layer 1]")
+    print(f"  Lawfulness:                             {ethical_result.lawfulness:.4f}  | Threshold: ={L1_THRESHOLDS['legal']['lawfulness']}")
+    print(f"  CVR (Consent Validity Rate):            {ethical_result.get_l1_metric('legal', 'cvr', 1.0):.4f}  | Threshold: ≥{L1_THRESHOLDS['legal']['cvr_min']}")
+    
+    print(f"\n[PERFORMANCE METRICS - Layer 1]")
+    print(f"  Accuracy:                               {ethical_result.accuracy:.4f}  | Threshold: ≥{L1_THRESHOLDS['performance']['accuracy_min']}")
+    print(f"  Recall:                                 {ethical_result.recall:.4f}  | Threshold: ≥{L1_THRESHOLDS['performance']['recall_min']}")
+    
+    print(f"\n[OTHER L1 METRICS]")
+    print(f"  Confidence (Explainability):            {ethical_result.get_l1_metric('explainability', 'confidence'):.4f}")
+    print(f"  TCR (Task Completion Rate):             {ethical_result.get_l1_metric('ux', 'tcr'):.4f}")
+    print(f"  Adv Accuracy (Security):                {ethical_result.get_l1_metric('security', 'adv_acc'):.4f}")
+    print(f"  ALC (Audit Log Completeness):           {ethical_result.get_l1_metric('monitoring', 'alc'):.4f}")
+    print("=" * 80)
+    
+    # =================== L2 RISK SCORES BY DIMENSION ===================
+    print("\n" + "=" * 80)
+    print("📈 L2 WEIGHTED RISK SCORES")
+    print("=" * 80)
+    print(f"  Dimension Weights (Sum={sum(DIMENSION_WEIGHTS.values()):.2f}):")
+    for dim_key, weight in DIMENSION_WEIGHTS.items():
+        risk = ethical_result.get_l2_risk(dim_key)
+        weighted = risk * weight
+        bar = "█" * int(risk * 20) + "░" * (20 - int(risk * 20))
+        print(f"    {dim_key:15s}: R={risk:.3f} × W={weight:.2f} = {weighted:.4f}  [{bar}]")
+    print(f"\n  L2 Total Risk: {ethical_result.layer2_risk_score:.4f}")
+    print(f"  S_LLM Score:   {ethical_result.s_llm:.4f}")
+    print("=" * 80)
+    
+    # =================== L3 FORENSIC EVIDENCE ===================
+    print("\n" + "=" * 80)
+    print("📋 L3 FORENSIC EVIDENCE BUNDLE")
+    print("=" * 80)
+    for dim_key in DIMENSION_WEIGHTS.keys():
+        evidence = ethical_result.get_l3_explanation(dim_key)
+        dim_result = ethical_result.get_dim_result(dim_key)
+        if dim_result:
+            print(f"\n  [{dim_result.name.upper()}]")
+            print(f"    Status: {dim_result.format_l1_output()}")
+            print(f"    {dim_result.format_l2_output()}")
+            print(f"    Evidence: {evidence}")
+    print("=" * 80)
+    
+    # =================== SUMMARY STATISTICS ===================
+    print("\n" + "=" * 80)
+    print("📊 AUDIT SUMMARY")
+    print("=" * 80)
+    print(f"  L1 Pass Rate: {ethical_result.l1_pass_count()}/9 ({ethical_result.l1_pass_rate()*100:.1f}%)")
+    print(f"  Failed Dimensions: {ethical_result.get_failed_dims() or 'None'}")
+    highest_risk = ethical_result.get_highest_risk_dim()
+    print(f"  Highest Risk Dimension: {highest_risk[0]} (R={highest_risk[1]:.3f})")
+    print(f"  Final Verdict: {ethical_result.final_label}")
+    print(f"  Risk Band: {ethical_result.risk_band}")
+    print(f"  Required Action: {ethical_result.required_action}")
+    print("=" * 80)
     
     # =================== RAG SOURCE CITATIONS (FROM PDFs) ===================
     print(f"\n{'='*60}")
