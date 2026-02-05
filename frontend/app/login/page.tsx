@@ -2,21 +2,30 @@
 
 import React from "react"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/store/authContext';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { AlertCircle, Loader2 } from 'lucide-react';
+import Image from "next/image";
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, user, isAuthenticated, loading } = useAuth();
   const router = useRouter();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (!loading && isAuthenticated && user) {
+      const redirectPath = user.role === 'admin' ? '/admin' : '/citizen';
+      router.push(redirectPath);
+    }
+  }, [loading, isAuthenticated, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,11 +50,19 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md border shadow-lg">
         <div className="p-8">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              GovAudit AI
-            </h1>
-            <p className="text-muted-foreground">RTI Information Portal</p>
+          <div className="mb-8 flex justify-center">
+            <Image
+              src="/icon.png"
+              alt="VerityAI Logo"
+              width={200}
+              height={60}
+              className="h-24 w-auto object-contain"
+              priority
+            />
+            {/* <h1 className="text-3xl font-bold text-foreground mb-2">
+              VerityAI
+            </h1> */}
+            {/* <p className="text-muted-foreground">RTI Information Portal</p> */}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -104,22 +121,6 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 space-y-3 text-sm text-muted-foreground">
-            <div className="border-t pt-4">
-              <p className="font-medium text-foreground mb-2">Demo Credentials:</p>
-              <div className="space-y-2 text-xs">
-                <div>
-                  <p className="font-medium">Citizen:</p>
-                  <p>citizen@example.com / password</p>
-                </div>
-                <div>
-                  <p className="font-medium">Admin:</p>
-                  <p>admin@example.com / password</p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </Card>
     </div>

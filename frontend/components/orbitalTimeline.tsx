@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { ArrowRight, Link, Zap } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
+import { ArrowRight, Link } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -139,18 +139,7 @@ export default function RadialOrbitalTimeline({
     return relatedItems.includes(itemId);
   };
 
-  const getStatusStyles = (status: TimelineItem["status"]): string => {
-    switch (status) {
-      case "completed":
-        return "text-white bg-black border-white";
-      case "in-progress":
-        return "text-black bg-white border-black";
-      case "pending":
-        return "text-white bg-black/40 border-white/50";
-      default:
-        return "text-white bg-black/40 border-white/50";
-    }
-  };
+
 
   return (
     <div
@@ -167,13 +156,15 @@ export default function RadialOrbitalTimeline({
             transform: `translate(${centerOffset.x}px, ${centerOffset.y}px)`,
           }}
         >
-          <div className="absolute w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 via-blue-500 to-teal-500 animate-pulse flex items-center justify-center z-10">
-            <div className="absolute w-20 h-20 rounded-full border border-zinc-200 dark:border-white/20 animate-ping opacity-70"></div>
-            <div
-              className="absolute w-24 h-24 rounded-full border border-zinc-100 dark:border-white/10 animate-ping opacity-50"
-              style={{ animationDelay: "0.5s" }}
-            ></div>
-            <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-md"></div>
+          <div className="absolute w-32 h-32 flex items-center justify-center z-10">
+            <div className="absolute w-40 h-40 rounded-full border border-zinc-200 dark:border-white/20 animate-ping opacity-30"></div>
+            <Image
+              src="/icon.png"
+              alt="VerityAI Logo"
+              width={160}
+              height={160}
+              className="w-28 h-28 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.4)] dark:drop-shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+            />
           </div>
 
           <div className="absolute w-96 h-96 rounded-full border border-zinc-200 dark:border-white/10"></div>
@@ -205,36 +196,33 @@ export default function RadialOrbitalTimeline({
                 }}
               >
                 <div
-                  className={`absolute rounded-full -inset-1 ${
-                    isPulsing ? "animate-pulse duration-1000" : ""
-                  }`}
+                  className={`absolute rounded-full -inset-1 ${isPulsing ? "animate-pulse duration-1000" : ""
+                    }`}
                   style={{
                     background: `radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%)`,
-                    width: `${item.energy * 0.5 + 40}px`,
-                    height: `${item.energy * 0.5 + 40}px`,
-                    left: `-${(item.energy * 0.5 + 40 - 40) / 2}px`,
-                    top: `-${(item.energy * 0.5 + 40 - 40) / 2}px`,
+                    width: `80px`,
+                    height: `80px`,
+                    left: `-20px`,
+                    top: `-20px`,
                   }}
                 ></div>
 
                 <div
                   className={`
                   w-10 h-10 rounded-full flex items-center justify-center
-                  ${
-                    isExpanded
+                  ${isExpanded
                       ? "bg-white text-black"
                       : isRelated
-                      ? "bg-white/50 text-black"
-                      : "bg-black text-white"
-                  }
+                        ? "bg-white/50 text-black"
+                        : "bg-black text-white"
+                    }
                   border-2 
-                  ${
-                    isExpanded
+                  ${isExpanded
                       ? "border-white shadow-lg shadow-white/30"
                       : isRelated
-                      ? "border-white animate-pulse"
-                      : "border-white/40"
-                  }
+                        ? "border-white animate-pulse"
+                        : "border-white/40"
+                    }
                   transition-all duration-300 transform
                   ${isExpanded ? "scale-150" : ""}
                 `}
@@ -257,44 +245,12 @@ export default function RadialOrbitalTimeline({
                   <Card className="absolute top-20 left-1/2 -translate-x-1/2 w-64 bg-white/90 dark:bg-black/90 backdrop-blur-lg border-zinc-200 dark:border-white/30 shadow-xl shadow-black/10 dark:shadow-white/10 overflow-visible">
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-px h-3 bg-zinc-300 dark:bg-white/50"></div>
                     <CardHeader className="pb-2">
-                      <div className="flex justify-between items-center">
-                        <Badge
-                          className={`px-2 text-xs ${getStatusStyles(
-                            item.status
-                          )}`}
-                        >
-                          {item.status === "completed"
-                            ? "COMPLETE"
-                            : item.status === "in-progress"
-                            ? "IN PROGRESS"
-                            : "PENDING"}
-                        </Badge>
-                        <span className="text-xs font-mono text-zinc-500 dark:text-white/50">
-                          {item.date}
-                        </span>
-                      </div>
                       <CardTitle className="text-sm mt-2 text-black dark:text-white">
                         {item.title}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="text-xs text-zinc-700 dark:text-white/80">
                       <p>{item.content}</p>
-
-                      <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/10">
-                        <div className="flex justify-between items-center text-xs mb-1">
-                          <span className="flex items-center text-zinc-600 dark:text-zinc-400">
-                            <Zap size={10} className="mr-1" />
-                            Energy Level
-                          </span>
-                          <span className="font-mono text-black dark:text-white">{item.energy}%</span>
-                        </div>
-                        <div className="w-full h-1 bg-zinc-100 dark:bg-white/10 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
-                            style={{ width: `${item.energy}%` }}
-                          ></div>
-                        </div>
-                      </div>
 
                       {item.relatedIds.length > 0 && (
                         <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/10">

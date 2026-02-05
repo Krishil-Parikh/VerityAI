@@ -26,9 +26,9 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
   return (
     <div
       className={cn(
-        "flex w-16 h-8 p-1 rounded-full cursor-pointer transition-all duration-300",
-        isDark 
-          ? "bg-zinc-950 border border-zinc-800" 
+        "flex w-20 h-11 p-1 rounded-full cursor-pointer transition-all duration-300",
+        isDark
+          ? "bg-zinc-950 border border-zinc-800"
           : "bg-zinc-100 border border-zinc-200",
         className
       )}
@@ -39,40 +39,40 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
       <div className="flex justify-between items-center w-full">
         <div
           className={cn(
-            "flex justify-center items-center w-6 h-6 rounded-full transition-transform duration-300",
-            isDark 
-              ? "transform translate-x-0 bg-zinc-800" 
-              : "transform translate-x-8 bg-gray-200"
+            "flex justify-center items-center w-8 h-8 rounded-full transition-transform duration-300",
+            isDark
+              ? "transform translate-x-0 bg-zinc-800"
+              : "transform translate-x-10 bg-gray-200"
           )}
         >
           {isDark ? (
-            <Moon 
-              className="w-4 h-4 text-white" 
+            <Moon
+              className="w-5 h-5 text-white"
               strokeWidth={1.5}
             />
           ) : (
-            <Sun 
-              className="w-4 h-4 text-gray-700" 
+            <Sun
+              className="w-5 h-5 text-gray-700"
               strokeWidth={1.5}
             />
           )}
         </div>
         <div
           className={cn(
-            "flex justify-center items-center w-6 h-6 rounded-full transition-transform duration-300",
-            isDark 
-              ? "bg-transparent" 
-              : "transform -translate-x-8"
+            "flex justify-center items-center w-8 h-8 rounded-full transition-transform duration-300",
+            isDark
+              ? "bg-transparent"
+              : "transform -translate-x-10"
           )}
         >
           {isDark ? (
-            <Sun 
-              className="w-4 h-4 text-gray-500" 
+            <Sun
+              className="w-5 h-5 text-gray-500"
               strokeWidth={1.5}
             />
           ) : (
-            <Moon 
-              className="w-4 h-4 text-black" 
+            <Moon
+              className="w-5 h-5 text-black"
               strokeWidth={1.5}
             />
           )}
