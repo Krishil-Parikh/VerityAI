@@ -25,35 +25,40 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
       className="flex-1 overflow-y-auto p-4 space-y-4"
     >
       {messages.length === 0 ? (
-        <div className="flex h-full items-center justify-center">
-          <div className="text-center">
-            <p className="text-lg font-medium text-foreground mb-2">
-              Welcome to GovAudit RTI Portal
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Ask a question to get started
-            </p>
-          </div>
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center flex flex-col items-center">
+          <img
+            src="/icon.png"
+            alt="VerityAI Logo"
+            className="h-16 w-auto object-contain mb-6"
+          />
+          <p className="text-lg font-medium text-foreground mb-2">
+            Welcome to VerityAI RTI Portal
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Ask a question to get started
+          </p>
         </div>
+      </div>
       ) : (
-        <>
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
-          ))}
+      <>
+        {messages.map((message) => (
+          <ChatMessage key={message.id} message={message} />
+        ))}
 
-          {isLoading && (
-            <div className="flex justify-start mb-4">
-              <div className="rounded-lg bg-muted px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  <span className="text-sm text-muted-foreground">
-                    Evaluating response...
-                  </span>
-                </div>
+        {isLoading && (
+          <div className="flex justify-start mb-4">
+            <div className="rounded-lg bg-muted px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">
+                  Evaluating response...
+                </span>
               </div>
             </div>
-          )}
-        </>
+          </div>
+        )}
+      </>
       )}
     </div>
   );

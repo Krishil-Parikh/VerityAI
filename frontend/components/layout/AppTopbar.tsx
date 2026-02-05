@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { LogOut } from 'lucide-react';
 import { ThemeToggle } from '@/components/toggle';
+import Image from 'next/image';
 
 export function AppTopbar() {
   const { user, logout } = useAuth();
@@ -18,11 +19,15 @@ export function AppTopbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center justify-between px-6">
-        <div className="flex items-center gap-3">
-          <div className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
-            GovAudit AI
-          </div>
-          {/* <span className="text-sm text-muted-foreground border-l border-border pl-3">RTI Portal</span> */}
+        <div className="flex items-center cursor-pointer pl-5" onClick={() => router.push('/')}>
+          <Image
+            src="/icon.png"
+            alt="VerityAI Logo"
+            width={160}
+            height={48}
+            className="h-12 w-auto object-contain"
+            priority
+          />
         </div>
 
         <div className="flex items-center gap-4">

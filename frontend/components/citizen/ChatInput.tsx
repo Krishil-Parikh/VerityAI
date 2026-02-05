@@ -150,7 +150,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           </span>
         )}
       </div>
-      
+
       <div className="flex gap-2">
         <Textarea
           value={message}
@@ -158,14 +158,13 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           placeholder="Ask a question about government information..."
           disabled={isLoading}
-          className="resize-none"
-          rows={3}
+          className="resize-none min-h-[44px] py-3"
+          rows={1}
         />
         <Button
           onClick={handleSubmit}
           disabled={isLoading || !message.trim()}
-          size="lg"
-          className="bg-primary hover:bg-primary/90 text-primary-foreground h-full"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground h-[44px] w-[44px] rounded-lg shrink-0 flex items-center justify-center"
         >
           <Send className="h-4 w-4" />
         </Button>

@@ -61,7 +61,7 @@ export function GraphsDashboard() {
             } catch (error) {
                 console.error('Error fetching initial telemetry:', error);
             }
-            
+
             setData(metricsStore.getMetricsHistory());
             setQueryCount(metricsStore.getHistoryCount());
             setIsLoading(false);
@@ -100,7 +100,7 @@ export function GraphsDashboard() {
     // Transform data for comparison view
     const getComparisonData = () => {
         const groups: Record<string, any> = {};
-        
+
         data.forEach(item => {
             const ts = item.timestamp || new Date().toISOString();
             if (!groups[ts]) {
@@ -110,7 +110,7 @@ export function GraphsDashboard() {
             groups[ts][modelKey] = item.metrics.overall_ethical_score;
             groups[ts][`${modelKey}_s_llm`] = item.metrics.s_llm_score;
         });
-        
+
         return Object.values(groups).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     };
 
@@ -164,14 +164,14 @@ export function GraphsDashboard() {
                                         <Tooltip />
                                         <Legend />
                                         {availableModels.map((model) => (
-                                            <Line 
+                                            <Line
                                                 key={model}
-                                                type="monotone" 
-                                                dataKey={model} 
-                                                name={model} 
-                                                stroke={MODEL_COLORS[model] || '#8884d8'} 
-                                                strokeWidth={3} 
-                                                dot={true} 
+                                                type="monotone"
+                                                dataKey={model}
+                                                name={model}
+                                                stroke={MODEL_COLORS[model] || '#8884d8'}
+                                                strokeWidth={3}
+                                                dot={true}
                                                 connectNulls={true}
                                             />
                                         ))}
@@ -194,15 +194,15 @@ export function GraphsDashboard() {
                                         <Tooltip />
                                         <Legend />
                                         {availableModels.map((model) => (
-                                            <Line 
+                                            <Line
                                                 key={`${model}_s_llm`}
-                                                type="monotone" 
-                                                dataKey={`${model}_s_llm`} 
-                                                name={`${model} (S_LLM)`} 
-                                                stroke={MODEL_COLORS[model] || '#8884d8'} 
-                                                strokeWidth={2} 
+                                                type="monotone"
+                                                dataKey={`${model}_s_llm`}
+                                                name={`${model} (S_LLM)`}
+                                                stroke={MODEL_COLORS[model] || '#8884d8'}
+                                                strokeWidth={2}
                                                 strokeDasharray="5 5"
-                                                dot={true} 
+                                                dot={true}
                                                 connectNulls={true}
                                             />
                                         ))}
@@ -275,23 +275,42 @@ export function GraphsDashboard() {
                                         {lastPoint.dimensions[key].name || key}
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent className="h-[150px] p-4 pt-0">
+                                <CardContent className="h-[200px] p-4 pt-0">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={filteredData}>
-                                            <XAxis dataKey="timestamp" hide />
-                                            <YAxis domain={[0, 100]} hide />
-                                            <Tooltip labelStyle={{ color: 'black' }} />
+                                        <LineChart data={filteredData} margin={{ top: 10, right: 10, left: -15, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
+                                            <XAxis
+                                                dataKey="timestamp"
+                                                tick={false}
+                                                label={{ value: 'Time', position: 'insideBottom', offset: -5, fontSize: 10, fill: '#888' }}
+                                                axisLine={{ stroke: '#888888', strokeOpacity: 0.3 }}
+                                            />
+                                            <YAxis
+                                                domain={[0, 100]}
+                                                tick={{ fontSize: 10, fill: '#888' }}
+                                                tickCount={5}
+                                                label={{ value: 'Score', angle: -90, position: 'insideLeft', offset: 15, fontSize: 10, fill: '#888' }}
+                                                axisLine={{ stroke: '#888888', strokeOpacity: 0.3 }}
+                                            />
+                                            <Tooltip
+                                                contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                labelStyle={{ color: '#1a1a1a', fontWeight: 'bold', fontSize: '11px' }}
+                                            />
                                             <Line
                                                 type="monotone"
                                                 dataKey={`dimensions.${key}.overall_score`}
                                                 stroke={MODEL_COLORS[selectedModel] || "#f43f5e"}
-                                                strokeWidth={2}
-                                                dot={true}
+                                                strokeWidth={2.5}
+                                                dot={false}
+                                                activeDot={{ r: 4, strokeWidth: 0 }}
                                             />
                                         </LineChart>
                                     </ResponsiveContainer>
-                                    <div className="text-2xl font-bold mt-2 text-right">
-                                        {filteredData.length > 0 ? Math.round(filteredData[filteredData.length - 1].dimensions[key].overall_score) : '-'}
+                                    <div className="flex justify-between items-center mt-2 px-2">
+                                        <span className="text-xs text-muted-foreground italic">Current Score</span>
+                                        <div className="text-xl font-bold text-primary">
+                                            {filteredData.length > 0 ? Math.round(filteredData[filteredData.length - 1].dimensions[key].overall_score) : '-'}%
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -306,9 +325,9 @@ export function GraphsDashboard() {
                         <h2 className="text-xl font-semibold mb-2">Active RAG References {selectedModel !== 'all' && `(${selectedModel})`}</h2>
                         {currentRag.length === 0 && <p className="text-muted-foreground">No RAG sources in selected data.</p>}
                         {currentRag.map((source: any, idx: number) => (
-                            <Card 
-                                key={idx} 
-                                className="hover:bg-muted/50 transition-colors cursor-pointer" 
+                            <Card
+                                key={idx}
+                                className="hover:bg-muted/50 transition-colors cursor-pointer"
                                 onClick={() => window.open(`/api/pdf?file=${encodeURIComponent(source.doc)}&page=${source.page}`, '_blank')}
                             >
                                 <CardHeader>
