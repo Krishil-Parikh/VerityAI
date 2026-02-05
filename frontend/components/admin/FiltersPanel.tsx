@@ -11,6 +11,7 @@ export interface FilterValues {
   status: 'all' | 'safe' | 'needs_review' | 'violation' | 'evaluating';
   minScore: number;
   maxScore: number;
+  searchQuery: string;
 }
 
 interface FiltersPanelProps {
@@ -22,6 +23,7 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
     status: 'all',
     minScore: 0,
     maxScore: 100,
+    searchQuery: '',
   });
 
   const handleStatusChange = (status: string) => {
@@ -43,11 +45,21 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
     onFilterChange(newFilters);
   };
 
+  const handleSearchChange = (query: string) => {
+    const newFilters = {
+      ...filters,
+      searchQuery: query,
+    };
+    setFilters(newFilters);
+    onFilterChange(newFilters);
+  };
+
   const handleReset = () => {
     const defaultFilters: FilterValues = {
       status: 'all',
       minScore: 0,
       maxScore: 100,
+      searchQuery: '',
     };
     setFilters(defaultFilters);
     onFilterChange(defaultFilters);
@@ -57,6 +69,19 @@ export function FiltersPanel({ onFilterChange }: FiltersPanelProps) {
     <Card className="border-border p-6 mb-6">
       <h3 className="text-lg font-semibold text-foreground mb-4">Filters</h3>
       <div className="space-y-4">
+        {/* Search Input */}
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-2">
+            Search
+          </label>
+          <Input 
+            placeholder="Search by ID or question..." 
+            value={filters.searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="bg-transparent"
+          />
+        </div>
+
         {/* Status Filter */}
         <div>
           <label className="block text-sm font-medium text-muted-foreground mb-2">

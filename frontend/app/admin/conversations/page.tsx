@@ -16,6 +16,7 @@ export default function ConversationsPage() {
     status: 'all',
     minScore: 0,
     maxScore: 100,
+    searchQuery: '',
   });
 
   // Subscribe to conversation updates
@@ -38,6 +39,14 @@ export default function ConversationsPage() {
   // Apply filters
   const filteredConversations = useMemo(() => {
     return conversations.filter((conv) => {
+      // Search filter
+      if (filters.searchQuery) {
+        const query = filters.searchQuery.toLowerCase();
+        const matchesId = conv.id.toLowerCase().includes(query);
+        const matchesMsg = conv.messages[0]?.content.toLowerCase().includes(query);
+        if (!matchesId && !matchesMsg) return false;
+      }
+
       if (
         filters.status !== 'all' &&
         conv.status !== filters.status
