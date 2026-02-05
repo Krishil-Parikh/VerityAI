@@ -15,7 +15,7 @@ const calculateOverallScore = (scores: DimensionScore[]): number => {
 };
 
 // Call the real backend API
-const callBackendAPI = async (query: string, model: string = 'llama3'): Promise<{
+const callBackendAPI = async (query: string, model: string = 'llama3', mode: 'online' | 'offline' = 'offline'): Promise<{
   response: string;
   dimensionScores: DimensionScore[];
   metricBreakdown: MetricBreakdown;
@@ -31,7 +31,8 @@ const callBackendAPI = async (query: string, model: string = 'llama3'): Promise<
       },
       body: JSON.stringify({
         user_query: query,
-        bot_model: model
+        bot_model: model,
+        mode: mode
       }),
     });
 
@@ -235,7 +236,7 @@ export const conversationStore = {
   },
 
   // Add AI response from real backend
-  addAIResponse: async (conversationId: string, model: string = 'llama3'): Promise<Conversation | undefined> => {
+  addAIResponse: async (conversationId: string, model: string = 'llama3', mode: 'online' | 'offline' = 'offline'): Promise<Conversation | undefined> => {
     const conv = conversations.find((c) => c.id === conversationId);
     if (!conv) return undefined;
 
@@ -253,7 +254,7 @@ export const conversationStore = {
       const results = await Promise.all(
         ALL_MODELS.map(async (m) => {
           try {
-            const result = await callBackendAPI(lastUserMsg.content, m);
+            const result = await callBackendAPI(lastUserMsg.content, m, mode);
             return { model: m, ...result };
           } catch (error) {
             console.error(`Error with model ${m}:`, error);
@@ -312,7 +313,7 @@ export const conversationStore = {
       overallScore,
       ragSources,
       fullResponse,
-    } = await callBackendAPI(lastUserMsg.content, model);
+    } = await callBackendAPI(lastUserMsg.content, model, mode);
 
     const aiMsg: Message = {
       id: `msg-ai-${Date.now()}`,

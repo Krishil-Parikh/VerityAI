@@ -5,6 +5,7 @@ import { Conversation, Message } from '@/types';
 import { ChatWindow } from '@/components/citizen/ChatWindow';
 import { ChatInput } from '@/components/citizen/ChatInput';
 import { conversationStore } from '@/store/conversationStore';
+import { ApiMode } from '@/lib/api-config';
 
 export default function CitizenPage() {
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -19,15 +20,15 @@ export default function CitizenPage() {
     return unsubscribe;
   }, []);
 
-  const handleSendMessage = useCallback(async (message: string, model: string = 'llama3') => {
+  const handleSendMessage = useCallback(async (message: string, model: string = 'llama3', mode: ApiMode = 'offline') => {
     // Create new conversation if none exists
     if (!conversation) {
       const newConv = conversationStore.createConversation('current-citizen', message);
       setConversation(newConv);
       setIsLoading(true);
 
-      // Get AI response with selected model
-      const response = await conversationStore.addAIResponse(newConv.id, model);
+      // Get AI response with selected model and mode
+      const response = await conversationStore.addAIResponse(newConv.id, model, mode);
       if (response) {
         setConversation(response);
       }
@@ -49,8 +50,8 @@ export default function CitizenPage() {
 
       setIsLoading(true);
 
-      // Get AI response with selected model
-      const response = await conversationStore.addAIResponse(conversation.id, model);
+      // Get AI response with selected model and mode
+      const response = await conversationStore.addAIResponse(conversation.id, model, mode);
       if (response) {
         setConversation(response);
       }

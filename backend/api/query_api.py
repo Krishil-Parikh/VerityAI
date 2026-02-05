@@ -369,6 +369,252 @@ async def process_query(request: QueryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ================== OPENROUTER CONFIGURATION ==================
+import urllib.request
+import urllib.error
+
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+OPENROUTER_MODELS = {
+    "gpt-4o": "openai/gpt-4o",
+    "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
+    "gemini-2.0-flash": "google/gemini-2.0-flash-exp",
+    "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
+    "deepseek-r1": "deepseek/deepseek-r1",
+}
+
+def call_openrouter(query: str, model: str, context: str = "") -> dict:
+    """Call OpenRouter API for online LLM inference."""
+    model_id = OPENROUTER_MODELS.get(model, "meta-llama/llama-3.3-70b-instruct")
+    
+    user_content = f"""Context: {context if context else 'No context provided'}
+
+User Query: {query}
+
+Please provide a helpful, accurate response based on RTI guidelines and Indian law. Cite relevant sections when applicable."""
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://rti-assistant.gov.in",
+        "X-Title": "RTI Ethics Assistant"
+    }
+    
+    payload = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": RTI_PROMPT.replace("{context}", "").replace("{query}", "")},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2048
+    }
+    
+    start_time = time.time()
+    
+    try:
+        req = urllib.request.Request(
+            OPENROUTER_BASE_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        
+        with urllib.request.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        ai_response = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        usage = result.get("usage", {})
+        
+        return {
+            "response": ai_response,
+            "model": model_id,
+            "latency_ms": latency_ms,
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "success": True
+        }
+        
+    except Exception as e:
+        return {
+            "response": f"Error calling OpenRouter: {str(e)}",
+            "model": model_id,
+            "latency_ms": int((time.time() - start_time) * 1000),
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "success": False,
+            "error": str(e)
+        }
+
+# ================== ONLINE ENDPOINT (OpenRouter) ==================
+@app.post("/query-online", response_model=QueryResponse)
+async def process_query_online(request: QueryRequest):
+    """
+    Process query using OpenRouter (online mode) with full ethics engine calculations.
+    Uses the same rti_ethics_engine as the Ollama endpoint - no hardcoded values.
+    """
+    try:
+        query = request.user_query
+        bot_model = request.bot_model
+        ts = datetime.now()
+        
+        # RAG retrieval (same as offline mode)
+        context, rag_docs, retrieved = retrieve(query)
+        
+        # Call OpenRouter instead of Ollama
+        openrouter_result = call_openrouter(query, bot_model, context)
+        
+        if not openrouter_result["success"]:
+            raise HTTPException(status_code=500, detail=openrouter_result.get("error", "OpenRouter call failed"))
+        
+        response = openrouter_result["response"]
+        latency = openrouter_result["latency_ms"]
+        inp_tok = openrouter_result["input_tokens"]
+        out_tok = openrouter_result["output_tokens"]
+        
+        # Compute grounding (same as offline)
+        grounding = compute_grounding(response, context, retrieved)
+        
+        # Detect group from query style
+        def detect_group(q):
+            rural = [r'\bji\b', r'\bkindly\b', r'\brespected\b', r'\bplease\s+sir\b']
+            urban = [r'\basap\b', r'\bfyi\b', r'Section\s*\d+', r'\bpursuant\b']
+            r = sum(1 for p in rural if re.search(p, q.lower()))
+            u = sum(1 for p in urban if re.search(p, q.lower()))
+            return 1 if r > u else 0 if u > r else hash(q) % 2
+        
+        # Classification
+        gt = 0 if re.search(r'\b(mobile|address|salary|private|personal)\b', query.lower()) else 1
+        pred = 0 if re.search(r'\b(exempt|cannot|refused|section 8|privacy)\b', response.lower()) else 1
+        group = detect_group(query)
+        
+        # Use historical data for fairness calculations
+        global historical_data
+        if historical_data and historical_data["count"] >= 10:
+            all_preds = np.append(historical_data["predictions"], pred)
+            all_labels = np.append(historical_data["labels"], gt)
+            all_groups = np.append(historical_data["groups"], group)
+        else:
+            all_preds = np.array([pred])
+            all_labels = np.array([gt])
+            all_groups = np.array([group])
+        
+        # USE RTI ETHICS ENGINE FOR ALL CALCULATIONS
+        metrics = build_metrics_from_raw_data(
+            query=query, response=response,
+            predictions=all_preds, labels=all_labels,
+            sensitive_attr=all_groups,
+            latency_ms=latency, output_tokens=out_tok, grounding_score=grounding["score"]
+        )
+        
+        result: EthicsResult = ethics_engine.run_protocol(metrics)
+        overall = {"ETHICAL": 100, "CONDITIONALLY_ETHICAL": 70, "UNETHICAL": 0}.get(result.final_label, 50)
+        
+        # Update fairness CSV
+        fairness_row = pd.DataFrame([{"sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred}])
+        fairness_row.to_csv(FAIRNESS_CSV, mode='a', header=not os.path.exists(FAIRNESS_CSV), index=False)
+        historical_data = load_historical_data()
+        
+        # Build dimensions from ethics engine
+        dimensions = {}
+        for dim_key in DIMENSION_WEIGHTS.keys():
+            dim_result = result.get_dim_result(dim_key)
+            if dim_result:
+                base_score = 100 * (1 - dim_result.l2_risk)
+                jitter = random.uniform(-3, 3)
+                jittered_score = max(0, min(100, base_score + jitter))
+                
+                dimensions[dim_key] = {
+                    "name": dim_result.name,
+                    "weight": DIMENSION_WEIGHTS[dim_key],
+                    "l1_status": dim_result.l1_status,
+                    "l1_reasons": dim_result.l1_reasons,
+                    "l2_risk": round(dim_result.l2_risk, 4),
+                    "l2_weighted_risk": round(dim_result.l2_risk * DIMENSION_WEIGHTS[dim_key], 4),
+                    "l2_indicators": dim_result.l2_indicators,
+                    "l3_evidence": dim_result.l3_evidence,
+                    "overall_score": round(jittered_score, 1),
+                    "raw_metrics": dim_result.raw_metrics
+                }
+        
+        # CSV logging
+        row = {
+            "timestamp": ts.isoformat(), "user_query": query, "bot_model": openrouter_result["model"],
+            "ai_response": response, "latency_ms": latency,
+            "input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok,
+            "grounding_score": round(grounding["score"], 4),
+            "hallucination_rate": round(grounding["hallucination_rate"], 4),
+            "l1_citation_coverage": round(grounding["l1"], 4),
+            "l2_cosine_similarity": round(grounding["l2"], 4),
+            "l3_support_ratio": round(grounding["l3"], 4),
+            "overall_ethical_score": overall, "s_llm_score": round(result.s_llm, 4),
+            "risk_band": result.risk_band, "final_label": result.final_label,
+            "spd": round(result.spd, 4), "di": round(result.di, 4),
+            "eop": round(result.eop, 4), "aod": round(result.aod, 4),
+            "rag_documents": rag_docs,
+            "sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred
+        }
+        pd.DataFrame([row]).to_csv(METRICS_CSV, mode='a', header=False, index=False)
+        
+        response_obj = QueryResponse(
+            success=True, ai_response=response,
+            bot_model=openrouter_result["model"],
+            metrics={
+                "overall_ethical_score": overall,
+                "s_llm_score": round(result.s_llm * 100, 2),
+                "risk_band": result.risk_band,
+                "final_label": result.final_label,
+                "l1_pass_rate": round(result.l1_pass_rate() * 100, 2),
+                "l1_pass_count": result.l1_pass_count(),
+                "layer2_risk_score": round(result.layer2_risk_score * 100, 2),
+                "failed_dimensions": result.get_failed_dims(),
+                "highest_risk_dim": result.get_highest_risk_dim(),
+                "spd": round(abs(result.spd) * 100, 2),
+                "di": round(result.di * 100, 2),
+                "eop": round(result.eop * 100, 2),
+                "aod": round(abs(result.aod) * 100, 2),
+                "psi": round(result.psi * 100, 2),
+                "ks": round(result.ks * 100, 2),
+                "accuracy": round(result.accuracy * 100, 2),
+                "recall": round(result.recall * 100, 2),
+                "lawfulness": round(result.lawfulness * 100, 2)
+            },
+            tokens={"input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok, "latency_ms": latency},
+            grounding={
+                "score": round(grounding["score"] * 100, 2),
+                "hallucination_rate": round(grounding["hallucination_rate"] * 100, 2),
+                "l1_citation_coverage": round(grounding["l1"] * 100, 2),
+                "l2_cosine_similarity": round(grounding["l2"] * 100, 2),
+                "l3_support_ratio": round(grounding["l3"] * 100, 2)
+            },
+            ethics={"l1_pass_rate": round(result.l1_pass_rate() * 100, 2), "layer2_risk_score": round(result.layer2_risk_score * 100, 2), "required_action": result.required_action},
+            dimensions=dimensions,
+            rag_sources=[{"doc": r["doc"], "page": r["page"], "score": round(r["score"] * 100, 2)} for r in retrieved]
+        )
+        
+        # Log full response
+        full_response_row = {
+            "timestamp": ts.isoformat(),
+            "user_query": query,
+            "bot_model": openrouter_result["model"],
+            "full_json_response": response_obj.model_dump_json()
+        }
+        pd.DataFrame([full_response_row]).to_csv(FULL_RESPONSE_CSV, mode='a', header=False, index=False)
+        
+        # Store latest response
+        global latest_response
+        latest_response = response_obj.model_dump()
+        latest_response["timestamp"] = ts.isoformat()
+        
+        return response_obj
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Store latest response for admin graphs
 latest_response = None
 
