@@ -1,32 +1,25 @@
 import { NextResponse } from 'next/server';
 import { 
-  OPENROUTER_CONFIG, 
-  OPENROUTER_MODELS,
+  LAMBDA_ENDPOINT,
+  ONLINE_MODELS,
   isProduction,
   ApiMode 
 } from '@/lib/api-config';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
-const LAMBDA_ENDPOINT = process.env.LAMBDA_ENDPOINT || '';
 
 /**
- * IMPORTANT: For proper ethics calculations, ALL requests go through the backend.
+ * IMPORTANT: For proper ethics calculations, ALL requests go through the appropriate backend.
  * 
- * In development:
- * - Offline mode: Backend uses Ollama for LLM inference
- * - Online mode: Backend uses OpenRouter for LLM inference (via /query-online endpoint)
- * 
- * In production:
- * - Online mode: Lambda handler uses OpenRouter + rti_ethics_engine
+ * - Offline mode: Local FastAPI backend uses Ollama for LLM inference
+ * - Online mode: AWS Lambda endpoint uses OpenRouter for LLM inference
  * 
  * This ensures the rti_ethics_engine package is ALWAYS used for metric calculations.
  */
 
-// Call local FastAPI backend (supports both Ollama and OpenRouter via inference_mode)
-async function callLocalBackend(query: string, model: string, inferenceMode: 'ollama' | 'openrouter' = 'ollama') {
-    const endpoint = inferenceMode === 'openrouter' ? '/query-online' : '/query';
-    
-    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+// Call local FastAPI backend (offline mode - Ollama)
+async function callLocalBackend(query: string, model: string) {
+    const response = await fetch(`${BACKEND_URL}/query`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -45,20 +38,20 @@ async function callLocalBackend(query: string, model: string, inferenceMode: 'ol
     return await response.json();
 }
 
-// Call Lambda endpoint (production) - Lambda uses rti_ethics_engine
+// Call AWS Lambda endpoint (online mode)
 async function callLambda(query: string, model: string) {
-    if (!LAMBDA_ENDPOINT) {
-        throw new Error('Lambda endpoint not configured');
-    }
+    // Map frontend model value to OpenRouter model ID
+    const modelMapping = ONLINE_MODELS.find(m => m.value === model);
+    const modelId = modelMapping?.id || model;
     
-    const response = await fetch(`${LAMBDA_ENDPOINT}/query`, {
+    const response = await fetch(LAMBDA_ENDPOINT, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
             user_query: query,
-            bot_model: model
+            bot_model: modelId
         }),
     });
 
@@ -67,7 +60,13 @@ async function callLambda(query: string, model: string) {
         throw new Error(`Lambda error: ${error}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    
+    // Lambda returns body as string, need to parse it
+    if (typeof data.body === 'string') {
+        return JSON.parse(data.body);
+    }
+    return data;
 }
 
 export async function POST(request: Request) {
@@ -80,18 +79,11 @@ export async function POST(request: Request) {
         let data;
         
         if (mode === 'online') {
-            // Online mode
-            if (isProduction() && LAMBDA_ENDPOINT) {
-                // Production: Use Lambda (which uses rti_ethics_engine)
-                data = await callLambda(query, model);
-            } else {
-                // Development: Use local backend with OpenRouter inference
-                // This ensures rti_ethics_engine is used for all calculations
-                data = await callLocalBackend(query, model, 'openrouter');
-            }
+            // Online mode: Use AWS Lambda endpoint
+            data = await callLambda(query, model);
         } else {
             // Offline mode: Use local FastAPI backend with Ollama
-            data = await callLocalBackend(query, model, 'ollama');
+            data = await callLocalBackend(query, model);
         }
         
         return NextResponse.json(data);
@@ -103,3 +95,4 @@ export async function POST(request: Request) {
         );
     }
 }
+

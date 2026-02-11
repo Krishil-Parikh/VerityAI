@@ -27,13 +27,16 @@ from rti_ethics_engine import (
 )
 
 # ================== AWS CONFIGURATION ==================
-dynamodb = boto3.resource("dynamodb")
-s3 = boto3.client("s3")
-
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "rti_query_history")
-FAIRNESS_TABLE = os.environ.get("FAIRNESS_TABLE", "rti_fairness_data")
+FAIRNESS_TABLE = os.environ.get("FAIRNESS_TABLE", "rti_fairness")
 S3_BUCKET = os.environ.get("S3_BUCKET", "rti-documents-bucket")
+DYNAMODB_REGION = os.environ.get("DYNAMODB_REGION", "us-east-1")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+
+# ================== AWS CONFIGURATION ==================
+# Explicitly set region for DynamoDB to handle cross-region tables if necessary
+dynamodb = boto3.resource("dynamodb", region_name=DYNAMODB_REGION)
+s3 = boto3.client("s3")
 
 # DynamoDB tables
 query_table = dynamodb.Table(TABLE_NAME)
@@ -46,11 +49,21 @@ ethics_engine = EthicsEngine()
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 OPENROUTER_MODELS = {
-    "gpt-4o": "openai/gpt-4o",
-    "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
-    "gemini-2.0-flash": "google/gemini-2.0-flash-exp",
-    "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
-    "deepseek-r1": "deepseek/deepseek-r1",
+    # Free tier models
+    "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
+    "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
+    "gemma-2-9b": "google/gemma-2-9b-it:free",
+    "qwen2.5-7b": "qwen/qwen-2.5-7b-instruct:free",
+    "mistral-7b": "mistralai/mistral-7b-instruct:free",
+    "phi-3-mini": "microsoft/phi-3-mini-128k-instruct:free",
+    # Budget model
+    "deepseek-v3": "deepseek/deepseek-chat",
+    # Legacy mappings for backward compatibility
+    "gpt-4o": "meta-llama/llama-3.1-8b-instruct:free",
+    "claude-3.5-sonnet": "meta-llama/llama-3.1-8b-instruct:free",
+    "gemini-2.0-flash": "google/gemma-2-9b-it:free",
+    "llama-3.3-70b": "meta-llama/llama-3.1-8b-instruct:free",
+    "deepseek-r1": "deepseek/deepseek-chat",
 }
 
 RTI_PROMPT = """You are a statutory RTI Assistant. Use ONLY retrieved context.
@@ -314,7 +327,7 @@ def lambda_handler(event, context):
             "ai_response": response,
             "bot_model": llm_result["model"],
             "metrics": {
-                "overall_ethical_score": overall,
+                "overall_ethical_score": Decimal(str(overall)),
                 "s_llm_score": round(float(result.s_llm) * 100, 2),
                 "risk_band": result.risk_band,
                 "final_label": result.final_label,
@@ -337,7 +350,7 @@ def lambda_handler(event, context):
                 "input_tokens": inp_tok,
                 "output_tokens": out_tok,
                 "total_tokens": inp_tok + out_tok,
-                "latency_ms": latency
+                "latency_ms": Decimal(str(latency))
             },
             "grounding": {
                 "score": round(float(grounding["score"]) * 100, 2),

@@ -140,7 +140,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
         {selectedMode === 'online' && !isProduction() && (
           <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
             <Wifi className="h-3 w-3" />
-            Using OpenRouter API
+            Using AWS Lambda API
           </span>
         )}
         {selectedMode === 'offline' && (

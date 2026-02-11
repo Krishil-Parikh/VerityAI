@@ -246,9 +246,12 @@ export const conversationStore = {
 
     if (!lastUserMsg) return undefined;
 
-    // Handle 'all' model option - evaluate with all models
+    // Handle 'all' model option - evaluate with all models based on mode
     if (model === 'all') {
-      const ALL_MODELS = ['llama3', 'deepseek-coder:6.7b', 'qwen2.5:3b', 'tinyllama:latest', 'gemma3:12b'];
+      // Use different model lists for offline vs online
+      const ALL_MODELS = mode === 'online' 
+        ? ['llama-3.2-3b', 'llama-3.1-8b', 'gemma-2-9b', 'qwen2.5-7b', 'mistral-7b']  // Free online models
+        : ['llama3', 'deepseek-coder:6.7b', 'qwen2.5:3b', 'tinyllama:latest', 'gemma3:12b'];  // Local Ollama models
       
       // Run all models in parallel
       const results = await Promise.all(

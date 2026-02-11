@@ -204,10 +204,31 @@ def compute_grounding(response: str, context: str, chunks: list):
     score = 0.4 * l1 + 0.3 * l2 + 0.3 * l3
     return {"score": score, "hallucination_rate": 1 - score, "l1": l1, "l2": l2, "l3": l3}
 
-RTI_PROMPT = """You are a statutory RTI Assistant. Use ONLY retrieved context.
-Context: {context}
-Query: {query}
-Answer legally, cite sources."""
+RTI_PROMPT = """
+You are a STRICTLY COMPLIANT RTI Assistant acting as a Central Public Information Officer (CPIO) under the Right to Information Act, 2005.
+
+**ABSOLUTE GUARDRAILS - VIOLATION WILL INVALIDATE RESPONSE:**
+- Respond ONLY using retrieved context from approved government documents. NEVER invent facts, use external knowledge, latent training, or assume information.
+- If query cannot be answered fully/accurately from context: Respond exactly: "The requested information is not available in the approved reference dataset. Please file a formal RTI application with the concerned public authority under Section 6 of the RTI Act, 2005."
+- For exemptions (Section 8(1)): Check clauses (a)-(j) strictly. Apply public interest override (Section 8(2)) ONLY if context explicitly justifies it. Provide reasoned "speaking order" with citations.
+- Personal/third-party info (Section 8(1)(j), 11): Deny unless public interest shown. No disclosure without process.
+- Always cite sources: "As per Section X of RTI Act 2005 [source document]."
+- Structure EVERY response formally (per DoPT/CIC guidelines):
+  - Header: Government of India, [Fake Dept], No. DEMO/RTI/2025, Date.
+  - PIO details: CPIO, Demo Department, demo.cpio@gov.in, Tel: 011-12345678.
+  - If providing info: Clear, accurate answer with citations.
+  - If denying/partial: Detailed reasons quoting section, public interest analysis.
+  - Severability (Section 10): Suggest if applicable.
+  - End with: "First appeal lies to First Appellate Authority (FAA) within 30 days under Section 19(1). FAA: FAA Demo Dept, address@email.gov.in."
+  - For certified copies: "Endorsed as True Copy" if requested.
+- Be formal, precise, neutral, lawful.
+
+Retrieved context: {context}
+
+User query: {query}
+
+Response (follow structure strictly):
+"""
 
 # ================== ENDPOINT ==================
 @app.post("/query", response_model=QueryResponse)
@@ -377,11 +398,21 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "sk-or-v1-75e95111ee6f
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 OPENROUTER_MODELS = {
-    "gpt-4o": "openai/gpt-4o",
-    "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
-    "gemini-2.0-flash": "google/gemini-2.0-flash-exp",
-    "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
-    "deepseek-r1": "deepseek/deepseek-r1",
+    # Free tier models
+    "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
+    "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
+    "gemma-2-9b": "google/gemma-2-9b-it:free",
+    "qwen2.5-7b": "qwen/qwen-2.5-7b-instruct:free",
+    "mistral-7b": "mistralai/mistral-7b-instruct:free",
+    "phi-3-mini": "microsoft/phi-3-mini-128k-instruct:free",
+    # Budget model
+    "deepseek-v3": "deepseek/deepseek-chat",
+    # Legacy mappings for backward compatibility
+    "gpt-4o": "meta-llama/llama-3.1-8b-instruct:free",  # Map to free alternative
+    "claude-3.5-sonnet": "meta-llama/llama-3.1-8b-instruct:free",  # Map to free alternative
+    "gemini-2.0-flash": "google/gemma-2-9b-it:free",  # Map to free alternative
+    "llama-3.3-70b": "meta-llama/llama-3.1-8b-instruct:free",  # Map to free alternative
+    "deepseek-r1": "deepseek/deepseek-chat",  # Map to budget alternative
 }
 
 def call_openrouter(query: str, model: str, context: str = "") -> dict:
