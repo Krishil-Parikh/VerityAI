@@ -15,7 +15,7 @@ const calculateOverallScore = (scores: DimensionScore[]): number => {
 };
 
 // Call the real backend API
-const callBackendAPI = async (query: string, model: string = 'llama3', mode: 'online' | 'offline' = 'offline'): Promise<{
+const callBackendAPI = async (query: string, conversationId: string, model: string = 'llama3', mode: 'online' | 'offline' = 'offline'): Promise<{
   response: string;
   dimensionScores: DimensionScore[];
   metricBreakdown: MetricBreakdown;
@@ -32,7 +32,8 @@ const callBackendAPI = async (query: string, model: string = 'llama3', mode: 'on
       body: JSON.stringify({
         user_query: query,
         bot_model: model,
-        mode: mode
+        mode: mode,
+        conversation_id: conversationId
       }),
     });
 
@@ -69,7 +70,7 @@ const callBackendAPI = async (query: string, model: string = 'llama3', mode: 'on
       response: data.ai_response,
       dimensionScores,
       metricBreakdown,
-      overallScore: data.metrics?.overall_ethical_score || 70,
+      overallScore: data.metrics?.s_llm_score || data.metrics?.overall_ethical_score || 0,
       ragSources: data.rag_sources || [],
       fullResponse: data,
     };
@@ -121,10 +122,23 @@ const loadConversationsFromBackend = async (): Promise<void> => {
         final_label: string;
         latency_ms: number;
         grounding_score: number;
+        bot_model: string;
+        dimensions?: Record<string, any>;
       }) => {
-        const score = conv.overall_ethical_score || 0;
+        const score = conv.s_llm_score || conv.overall_ethical_score || 0;
         const status = score >= 85 ? 'safe' : score >= 70 ? 'needs_review' : 'violation';
         
+        const dims = conv.dimensions;
+        const dimensionScores: DimensionScore[] = dims ? Object.keys(dims).map(key => ({
+            name: dims[key].name || key,
+            score: dims[key].overall_score || 0,
+            status: getScoreStatus(dims[key].overall_score || 0),
+        })) : [];
+        
+        if (dimensionScores.length > 0) {
+            console.log(`[Store] Mapped ${dimensionScores.length} dimensions for ${conv.id}`);
+        }
+
         return {
           id: conv.id || `conv-${Date.now()}-${Math.random()}`,
           citizenId: 'citizen-historical',
@@ -147,7 +161,8 @@ const loadConversationsFromBackend = async (): Promise<void> => {
           status: status as 'safe' | 'needs_review' | 'violation',
           createdAt: new Date(conv.timestamp),
           updatedAt: new Date(conv.timestamp),
-          dimensionScores: [],
+          dimensionScores: dimensionScores,
+          botModel: conv.bot_model || 'llama3',
         };
       });
       
@@ -228,6 +243,7 @@ export const conversationStore = {
       createdAt: new Date(),
       updatedAt: new Date(),
       dimensionScores: [],
+      botModel: 'llama3',
     };
 
     conversations.unshift(newConversation);
@@ -257,7 +273,7 @@ export const conversationStore = {
       const results = await Promise.all(
         ALL_MODELS.map(async (m) => {
           try {
-            const result = await callBackendAPI(lastUserMsg.content, m, mode);
+            const result = await callBackendAPI(lastUserMsg.content, conversationId, m, mode);
             return { model: m, ...result };
           } catch (error) {
             console.error(`Error with model ${m}:`, error);
@@ -316,7 +332,7 @@ export const conversationStore = {
       overallScore,
       ragSources,
       fullResponse,
-    } = await callBackendAPI(lastUserMsg.content, model, mode);
+    } = await callBackendAPI(lastUserMsg.content, conversationId, model, mode);
 
     const aiMsg: Message = {
       id: `msg-ai-${Date.now()}`,
@@ -350,6 +366,77 @@ export const conversationStore = {
     }
 
     return JSON.parse(JSON.stringify(conv));
+  },
+
+  // Get full history for a specific conversation from backend
+  fetchConversationHistory: async (id: string): Promise<Conversation | undefined> => {
+    try {
+      const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const res = await fetch(`${BACKEND_URL}/conversation/${id}`);
+      
+      if (!res.ok) {
+        console.error('Failed to fetch conversation history:', res.status);
+        return undefined;
+      }
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        // Map backend messages to frontend format
+        const messages: Message[] = data.messages.map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: new Date(m.timestamp),
+          ethicalScore: m.ethicalScore,
+        }));
+        
+        const score = data.overall_ethical_score || 0;
+        const status = score >= 85 ? 'safe' : score >= 70 ? 'needs_review' : 'violation';
+        
+        const dims = data.dimensions;
+        const dimensionScores: DimensionScore[] = dims ? Object.keys(dims).map(key => ({
+            name: dims[key].name || key,
+            score: dims[key].overall_score || 0,
+            status: getScoreStatus(dims[key].overall_score || 0),
+        })) : [];
+
+        console.log(`[Store] Historical conversation ${data.id} has ${dimensionScores.length} dimension scores`);
+
+        const updatedConv: Conversation = {
+          id: data.id,
+          citizenId: 'citizen-historical',
+          messages: messages,
+          overallEthicalScore: score,
+          status: status as 'safe' | 'needs_review' | 'violation',
+          createdAt: messages.length > 0 ? messages[0].timestamp : new Date(),
+          updatedAt: messages.length > 1 ? messages[messages.length - 1].timestamp : new Date(),
+          dimensionScores: dimensionScores,
+          botModel: data.bot_model || 'llama3',
+        };
+        
+        // Update in-memory storage
+        const idx = conversations.findIndex(c => c.id === id);
+        if (idx !== -1) {
+          conversations[idx] = updatedConv;
+        } else {
+          conversations.push(updatedConv);
+        }
+        
+        notifySubscribers();
+        return updatedConv;
+      }
+    } catch (error) {
+      console.error('Error fetching conversation history:', error);
+    }
+    return undefined;
+  },
+
+  // Delete a conversation
+  deleteConversation: (id: string): void => {
+    conversations = conversations.filter(c => c.id !== id);
+    seenConvIds.delete(id);
+    notifySubscribers();
   },
 
   // Subscribe to changes

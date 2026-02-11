@@ -1,0 +1,5 @@
+{
+    "user_query": "Hello, tell me about RTI Act Section 4.",
+    "bot_model": "llama3",
+    "conversation_id": "test-conv-traceback"
+}

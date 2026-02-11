@@ -86,7 +86,10 @@ export default function ConversationsPage() {
             </h2>
             <ConversationTable
               conversations={filteredConversations}
-              onViewDetails={setSelectedConversation}
+              onViewDetails={async (conv) => {
+                const fullConv = await conversationStore.fetchConversationHistory(conv.id);
+                setSelectedConversation(fullConv || conv);
+              }}
             />
           </div>
         </Card>

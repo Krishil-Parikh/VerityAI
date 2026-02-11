@@ -11,6 +11,7 @@ import chromadb
 from chromadb.config import Settings
 import fitz  # PyMuPDF
 from scipy.stats import entropy  # For KL divergence in Layer 2, if needed; pip install scipy
+import pandas as pd 
 
 # Import from the new RTI Ethics Engine package (production-level)
 import sys
@@ -38,7 +39,9 @@ DB_DIR = os.path.join(BACKEND_DIR, "db")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(DB_DIR, exist_ok=True)
 
-METRICS_CSV = os.path.join(DATA_DIR, "conversations_metrics.csv")
+METRICS_CSV = os.path.join(DATA_DIR, "query_api_metrics.csv")
+FAIRNESS_CSV = os.path.join(DATA_DIR, "fairness_data.csv")
+FULL_RESPONSE_CSV = os.path.join(DATA_DIR, "full_responses.csv")
 PDF_DIR = DATA_DIR
 BOT_MODEL = "llama3"
 JUDGE_MODEL = "llama3"
@@ -451,7 +454,8 @@ def format_rag_citations(retrieved: list) -> list:
 
 # ================== MAIN LOOP ==================
 print("RAG RTI Ethics Engine (PDFs loaded)")
-print("PDFs found:", [f for f in PDF_FILES if os.path.exists(f)])
+pdf_list = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]
+print("PDFs found:", pdf_list)
 print("Enter queries below.\n")
 
 conv_counter = len(df["conversation_id"].unique()) + 1 if not df.empty else 1
@@ -526,10 +530,9 @@ while True:
     # Build a separate fairness dataframe with proper columns
     fairness_cols = ["sensitive_group", "ground_truth_disclose", "system_disclose"]
     
-    # Create or load existing fairness data
-    fairness_csv = "../data/fairness_data.csv"
-    if os.path.exists(fairness_csv):
-        df_fairness = pd.read_csv(fairness_csv)
+    # Create or load existing fairness data (uses shared FAIRNESS_CSV)
+    if os.path.exists(FAIRNESS_CSV):
+        df_fairness = pd.read_csv(FAIRNESS_CSV)
     else:
         df_fairness = pd.DataFrame(columns=fairness_cols)
     
@@ -540,7 +543,7 @@ while True:
         "system_disclose": sys_disclose
     }])
     df_fairness = pd.concat([df_fairness, new_row], ignore_index=True)
-    df_fairness.to_csv(fairness_csv, index=False)
+    df_fairness.to_csv(FAIRNESS_CSV, index=False)
     
     # Debug: Show fairness data stats
     print(f"\n[DEBUG] Fairness Data Stats:")

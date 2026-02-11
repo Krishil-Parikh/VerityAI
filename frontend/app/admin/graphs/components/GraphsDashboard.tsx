@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { BackendResponse } from '@/types';
 import { metricsStore } from '@/store/metricsStore';
 import { Button } from "@/components/ui/button";
-import { FileText, ShieldAlert, BadgeCheck, Activity, RefreshCw, Loader2 } from 'lucide-react';
+import { FileText, ShieldAlert, BadgeCheck, Activity, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 
 import {
     Select,
@@ -25,7 +25,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
-type ViewType = 'score' | 'tokens' | 'dimensions' | 'rag' | 'comparison';
+type ViewType = 'score' | 'tokens' | 'dimensions' | 'rag' | 'comparison' | 'hallucination';
 
 const MODEL_COLORS: Record<string, string> = {
     'llama3': '#8884d8',
@@ -33,12 +33,24 @@ const MODEL_COLORS: Record<string, string> = {
     'qwen2.5:3b': '#ffc658',
     'tinyllama:latest': '#ff8042',
     'gemma3:12b': '#0088fe',
-    'all': '#8884d8'
+    // OpenRouter models
+    'meta-llama/llama-3.2-3b-instruct': '#8884d8',
+    'meta-llama/llama-3.1-8b-instruct': '#82ca9d',
+    'google/gemma-2-9b-it': '#ffc658',
+    'qwen/qwen-2.5-7b-instruct': '#ff8042',
+    'mistralai/mistral-7b-instruct': '#0088fe',
+    'deepseek/deepseek-chat': '#10b981',
+    'all': '#6366f1'
 };
 
 const ALL_MODELS = [
     { value: 'all', label: 'All Models' },
-    { value: 'llama3', label: 'Llama 3' },
+    { value: 'meta-llama/llama-3.2-3b-instruct', label: 'Llama 3.2 3B' },
+    { value: 'meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B' },
+    { value: 'google/gemma-2-9b-it', label: 'Gemma 2 9B' },
+    { value: 'qwen/qwen-2.5-7b-instruct', label: 'Qwen 2.5 7B' },
+    { value: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
+    { value: 'llama3', label: 'Llama 3 (Local)' },
     { value: 'deepseek-coder:6.7b', label: 'DeepSeek Coder' },
     { value: 'qwen2.5:3b', label: 'Qwen 2.5' },
     { value: 'tinyllama:latest', label: 'TinyLlama' },
@@ -52,7 +64,7 @@ export function GraphsDashboard() {
     const [queryCount, setQueryCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Fetch initial data from backend AND subscribe to metricsStore
+    // Fetch initial data and setup polling
     useEffect(() => {
         const fetchInitialData = async () => {
             setIsLoading(true);
@@ -61,7 +73,6 @@ export function GraphsDashboard() {
             } catch (error) {
                 console.error('Error fetching initial telemetry:', error);
             }
-
             setData(metricsStore.getMetricsHistory());
             setQueryCount(metricsStore.getHistoryCount());
             setIsLoading(false);
@@ -69,12 +80,31 @@ export function GraphsDashboard() {
 
         fetchInitialData();
 
+        // Subscribe to store updates
         const unsubscribe = metricsStore.subscribe(() => {
             setData(metricsStore.getMetricsHistory());
             setQueryCount(metricsStore.getHistoryCount());
         });
 
-        return () => unsubscribe();
+        // Setup real-time polling for the latest response
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/telemetry?mode=latest');
+                if (res.ok) {
+                    const latest = await res.json();
+                    if (latest && !latest.error && latest.status !== 'waiting') {
+                        metricsStore.addMetricsPoint(latest);
+                    }
+                }
+            } catch (e) {
+                console.error('Polling error:', e);
+            }
+        }, 3000); // Poll every 3 seconds
+
+        return () => {
+            unsubscribe();
+            clearInterval(pollInterval);
+        };
     }, []);
 
     const handleRefresh = async () => {
@@ -107,8 +137,13 @@ export function GraphsDashboard() {
                 groups[ts] = { timestamp: ts };
             }
             const modelKey = item.bot_model || 'unknown';
-            groups[ts][modelKey] = item.metrics.overall_ethical_score;
-            groups[ts][`${modelKey}_s_llm`] = item.metrics.s_llm_score;
+            
+            // Safety checks for undefined metrics
+            const score = item.metrics?.s_llm_score ?? 0;
+            
+            groups[ts][modelKey] = score;
+            groups[ts][`${modelKey}_s_llm`] = score;
+            groups[ts][`${modelKey}_hallucination`] = item.grounding?.hallucination_rate !== undefined ? item.grounding.hallucination_rate * 100 : 0;
         });
 
         return Object.values(groups).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -318,6 +353,75 @@ export function GraphsDashboard() {
                     </div>
                 );
 
+            case 'hallucination':
+                return (
+                    <div className="space-y-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Hallucination Rate comparison (%)</CardTitle>
+                                <CardDescription>Comparing Hallucination Rates across different LLMs (Lower is better).</CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[400px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={comparisonData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="timestamp" />
+                                        <YAxis domain={[0, 100]} />
+                                        <Tooltip />
+                                        <Legend />
+                                        {availableModels.map((model) => (
+                                            <Line
+                                                key={`${model}_hallucination`}
+                                                type="monotone"
+                                                dataKey={`${model}_hallucination`}
+                                                name={`${model} (Hallucination %)`}
+                                                stroke={MODEL_COLORS[model] || '#8884d8'}
+                                                strokeWidth={2}
+                                                dot={true}
+                                                connectNulls={true}
+                                            />
+                                        ))}
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+
+                        {selectedModel !== 'all' && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Grounding Metrics Trend ({selectedModel})</CardTitle>
+                                    <CardDescription>Visualizing Citation Coverage vs Hallucination Rate.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="h-[400px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={filteredData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="timestamp" />
+                                            <YAxis domain={[0, 1]} />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Line
+                                                type="monotone"
+                                                dataKey="grounding.hallucination_rate"
+                                                name="Hallucination Rate"
+                                                stroke="#ef4444"
+                                                strokeWidth={3}
+                                            />
+                                            <Line
+                                                type="monotone"
+                                                dataKey="grounding.l1_citation_coverage"
+                                                name="Citation Coverage"
+                                                stroke="#22c55e"
+                                                strokeWidth={3}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+                );
+
             case 'rag':
                 const currentRag = filteredData.length > 0 ? filteredData[filteredData.length - 1].rag_sources : [];
                 return (
@@ -361,6 +465,9 @@ export function GraphsDashboard() {
                     </Button>
                     <Button variant={view === 'tokens' ? 'default' : 'ghost'} onClick={() => setView('tokens')} className="flex items-center gap-2">
                         <BadgeCheck className="h-4 w-4" /> Tokens
+                    </Button>
+                    <Button variant={view === 'hallucination' ? 'default' : 'ghost'} onClick={() => setView('hallucination')} className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" /> Hallucination
                     </Button>
                     <Button variant={view === 'dimensions' ? 'default' : 'ghost'} onClick={() => setView('dimensions')} className="flex items-center gap-2">
                         <ShieldAlert className="h-4 w-4" /> Dimensions

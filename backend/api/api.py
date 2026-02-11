@@ -129,8 +129,8 @@ class GroundingJudge:
         
         coverage = cited_sentences / total_sentences
         
-        # L1 PASS/FAIL: Must have at least 30% citation coverage
-        l1_status = "PASS" if coverage >= 0.3 else "FAIL"
+        # L1 PASS/FAIL: Must have at least 50% citation coverage (standardized)
+        l1_status = "PASS" if coverage >= 0.5 else "FAIL"
         
         return {
             "layer": "L1",
@@ -140,7 +140,7 @@ class GroundingJudge:
             "total_sentences": total_sentences,
             "cited_sentences": cited_sentences,
             "coverage_percent": round(coverage * 100, 1),
-            "threshold": ">=30%",
+            "threshold": ">=50%",
             "reason": f"{cited_sentences}/{total_sentences} sentences have legal/policy citations",
             "details": citation_details[:5]  # First 5 examples
         }
@@ -361,7 +361,7 @@ class GroundingJudge:
         # Overall status
         if l1["status"] == "FAIL":
             overall_status = "FAIL"
-            overall_reason = "L1 Citation Coverage failed (hard requirement)"
+            overall_reason = "L1 Citation Coverage failed (hard gate at >= 0.5)"
         elif l3["status"] == "FAIL":
             overall_status = "WARN"
             overall_reason = "L3 indicates high hallucination risk"

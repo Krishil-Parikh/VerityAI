@@ -69,6 +69,24 @@ export function OverviewCards({ conversations }: OverviewCardsProps) {
                         </p>
                         <span className="text-xs text-muted-foreground">/100</span>
                     </div>
+                    {conversations.length > 0 && (
+                        <div className="mt-2 flex items-center gap-1">
+                            <Badge variant="outline" className="text-[10px] py-0 border-blue-200 text-blue-700 bg-blue-50/50">
+                                Top: {
+                                    Object.entries(
+                                        conversations.reduce((acc: any, c) => {
+                                            if (!acc[c.botModel]) acc[c.botModel] = [];
+                                            acc[c.botModel].push(c.overallEthicalScore);
+                                            return acc;
+                                        }, {})
+                                    ).map(([m, scores]: [string, any]) => ({
+                                        m,
+                                        avg: scores.reduce((a: number, b: number) => a + b, 0) / scores.length
+                                    })).sort((a, b) => b.avg - a.avg)[0]?.m || 'N/A'
+                                }
+                            </Badge>
+                        </div>
+                    )}
                 </div>
             </Card>
 

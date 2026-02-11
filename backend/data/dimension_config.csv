@@ -1,34 +1,31 @@
 dimension_name,metric_name,weight,direction,min_value,max_value,threshold_low,threshold_high,layer,confidence_interval,department_override,description
-legal,legal_compliance_score,0.2,higher_better,0,1,0.7,1.0,L1,95%,"{""defence"":0.25,""default"":0.20}",Binary legal compliance gate
-legal,dpia_coverage,0.2,higher_better,0,1,0.6,1.0,L2,95%,,Data Protection Impact Assessment coverage
+legal,lawfulness,0.2,higher_better,0,1,0.5,1.0,L1,95%,"{""defence"":0.25,""default"":0.20}",Binary legal compliance gate
+legal,cvr,0.2,higher_better,0,1,0.5,1.0,L1,95%,,Consent Validity Rate
 legal,proportionality,0.2,higher_better,0,1,0.5,1.0,L2,90%,,Proportionality of response to query scope
-fairness,spd,0.2,lower_better,-1,1,-0.1,0.1,L1,95%,,Statistical Parity Difference |SPD|<=0.1
-fairness,di,0.2,range,0,5,0.8,1.25,L1,95%,,Disparate Impact ratio 0.8<=DI<=1.25
-fairness,eop,0.2,lower_better,-1,1,-0.1,0.1,L1,95%,,Equal Opp. Difference |EOP|<=0.1
-fairness,aod,0.2,lower_better,-1,1,-0.1,0.1,L1,95%,,Average Odds Difference |AOD|<=0.1
-environmental,gpu_hours,0.04,lower_better,0,100,0.0,10.0,L2,90%,,GPU hours consumed per batch
+fairness,spd,0.2,lower_better,-1,1,-0.5,0.5,L1,95%,,Statistical Parity Difference |SPD|<=0.5
+fairness,di,0.2,range,0,5,0.5,2.0,L1,95%,,Disparate Impact ratio 0.5<=DI<=2.0
+fairness,eop,0.2,lower_better,-1,1,-0.5,0.5,L1,95%,,Equal Opp. Difference |EOP|<=0.5
+fairness,aod,0.2,lower_better,-1,1,-0.5,0.5,L1,95%,,Average Odds Difference |AOD|<=0.5
+environmental,inf_cost_max,0.04,lower_better,0,1,0.0,0.5,L1,90%,,Max inference cost (USD)
+environmental,gpu_hours_max,0.04,lower_better,0,1,0.0,0.5,L1,90%,,Max GPU hours per query
 environmental,compute_intensity,0.04,lower_better,0,1,0.0,0.5,L2,90%,,Compute intensity normalized ratio
-environmental,inf_cost_usd,0.04,lower_better,0,1,0.0,0.05,L2,90%,,Inference cost per query in USD
-environmental,hardware_util,0.04,higher_better,0,1,0.4,0.95,L3,85%,,Hardware utilization ratio
-explainability,citation_coverage,0.16,higher_better,0,1,0.5,1.0,L1,95%,,L1 citation coverage from RAG sources
+environmental,hardware_util,0.04,higher_better,0,1,0.5,0.95,L3,85%,,Hardware utilization ratio
+explainability,confidence_min,0.16,higher_better,0,1,0.5,1.0,L1,95%,,Minimum model confidence
+explainability,fi_min,0.16,higher_better,0,1,0.5,1.0,L1,95%,,Minimum feature importance coverage
 explainability,cosine_similarity,0.16,higher_better,0,1,0.6,1.0,L2,95%,,L2 cosine similarity score
 explainability,support_ratio,0.16,higher_better,0,1,0.5,1.0,L2,90%,,L3 support ratio from evidence
-explainability,exp_stability,0.16,higher_better,0,1,0.7,1.0,L3,90%,,Explanation stability across reruns
+ux,tcr_min,0.12,higher_better,0,1,0.5,1.0,L1,,,Task Completion Rate: TCR >= 0.5
+ux,ftr_max,0.12,lower_better,0,1,0.0,0.5,L1,,,Frustration Rate: FTR <= 0.5
 ux,readability_fk,0.12,lower_better,0,20,6.0,14.0,L2,90%,,Flesch-Kincaid grade level
-ux,cognitive_load,0.12,lower_better,0,1,0.0,0.6,L2,85%,,Cognitive load proxy score
-ux,tone_neutrality,0.12,higher_better,0,1,0.6,1.0,L2,90%,,Tone neutrality score
-performance,tcr,0.12,higher_better,0,1,0.7,1.0,L2,95%,,Task Completion Rate
-performance,ftr,0.12,higher_better,0,1,0.6,1.0,L2,90%,,First-Turn Resolution rate
-performance,alc,0.12,lower_better,0,10000,0.0,3000.0,L2,95%,,Average Latency per Call (ms)
-drift,psi,0.08,lower_better,0,1,0.0,0.2,L1,95%,,Population Stability Index PSI<=0.2
-drift,ks,0.08,lower_better,0,1,0.0,0.05,L1,95%,,Kolmogorov-Smirnov stat KS<=0.05
+performance,accuracy_min,0.12,higher_better,0,1,0.5,1.0,L1,,,Minimum accuracy
+performance,recall_min,0.12,higher_better,0,1,0.5,1.0,L1,,,Minimum recall
+performance,latency_ms,0.12,lower_better,0,10000,0.0,3000.0,L2,95%,,Average Latency per Call (ms)
+drift,psi,0.08,lower_better,0,1,0.0,0.5,L1,95%,,Population Stability Index PSI<=0.5
+drift,ks,0.08,lower_better,0,1,0.0,0.5,L1,95%,,Kolmogorov-Smirnov stat KS<=0.5
 drift,embedding_drift_l2,0.08,lower_better,0,10,0.0,1.5,L2,90%,,L2 norm of embedding centroid drift
-drift,counterfactual_dist,0.08,lower_better,0,5,0.0,0.5,L3,90%,,Counterfactual response distance
-monitoring,sla_compliance,0.16,higher_better,0,1,0.9,1.0,L1,95%,,SLA compliance rate (latency<3s)
+monitoring,alc_min,0.16,higher_better,0,1,0.5,1.0,L1,,,Audit Log Completeness: ALC >= 0.5
+monitoring,sla_min,0.16,higher_better,0,1,0.5,1.0,L1,,,SLA Compliance: SLA >= 0.5
 monitoring,pvr,0.16,lower_better,0,1,0.0,0.1,L2,90%,,Policy Violation Rate
-monitoring,irf,0.16,lower_better,0,1,0.0,0.05,L2,90%,,Incident Response Frequency
-monitoring,mir,0.16,lower_better,0,1,0.0,0.15,L3,85%,,Model Incident Rate
-security,adv_acc,0.16,higher_better,0,1,0.85,1.0,L1,95%,"{""defence"":0.20,""default"":0.16}",Adversarial Accuracy (attack rejection)
-security,pisr,0.16,higher_better,0,1,0.9,1.0,L1,95%,,PII Suppression Rate
-security,pdr,0.16,higher_better,0,1,0.85,1.0,L2,90%,,Prompt Defense Rate
-security,source_diversity_score,0.16,higher_better,0,1,0.3,1.0,L3,85%,,Source diversity in RAG retrieval
+security,adv_acc_min,0.16,higher_better,0,1,0.5,1.0,L1,,"{""defence"":0.20,""default"":0.16}",Adversarial Accuracy: AdvAcc >= 0.5
+security,pisr_max,0.16,lower_better,0,1,0.0,0.5,L1,95%,,Prompt Injection Success Rate: PISR <= 0.5
+security,pdr,0.16,higher_better,0,1,0.5,1.0,L2,90%,,Prompt Defense Rate

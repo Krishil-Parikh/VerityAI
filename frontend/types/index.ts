@@ -45,6 +45,7 @@ export interface Conversation {
   createdAt: Date;
   updatedAt: Date;
   dimensionScores: DimensionScore[];
+  botModel: string;
 }
 
 export interface User {

@@ -5,6 +5,8 @@ Takes user_query and bot_model, returns response with metrics, appends to CSV
 import os
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+import urllib.request
+import urllib.error
 import ollama
 import pandas as pd
 import json
@@ -45,9 +47,12 @@ os.makedirs(DB_DIR, exist_ok=True)
 METRICS_CSV = os.path.join(DATA_DIR, "query_api_metrics.csv")
 FAIRNESS_CSV = os.path.join(DATA_DIR, "fairness_data.csv")
 FULL_RESPONSE_CSV = os.path.join(DATA_DIR, "full_responses.csv")
+GOLD_EVAL_CSV = os.path.join(DATA_DIR, "gold_rti_eval.csv")
+ADVERSARIAL_CSV = os.path.join(DATA_DIR, "adversarial_tests.csv")
+DIMENSION_CONFIG_CSV = os.path.join(DATA_DIR, "dimension_config.csv")
 PDF_DIR = DATA_DIR
 EMBED_MODEL = "all-MiniLM-L6-v2"
-TOP_K = 5
+TOP_K = 10  # Increased to capture page-specific chunks better
 PERSIST_DIRECTORY = os.path.join(DB_DIR, "chroma_rti_db")
 
 # Initialize
@@ -79,49 +84,118 @@ else:
 
 # ChromaDB
 chroma_client = chromadb.Client(Settings(anonymized_telemetry=False, is_persistent=True, persist_directory=PERSIST_DIRECTORY))
-try:
-    collection = chroma_client.get_collection(name="rti_documents")
-except:
-    collection = chroma_client.create_collection(name="rti_documents", metadata={"hnsw:space": "cosine"})
+COLLECTION_NAME = "rti_documents_v4" # Force v4 for stable MiniLM + Smart Chunking
+
+def get_or_create_collection():
+    try:
+        coll = chroma_client.get_collection(name=COLLECTION_NAME)
+        # Verify dimension mismatch (MiniLM=384)
+        sample = coll.get(limit=1, include=["embeddings"])
+        # Fix: Check length explicitly to avoid "truth value of an array is ambiguous" error
+        if sample["embeddings"] is not None and len(sample["embeddings"]) > 0:
+            if len(sample["embeddings"][0]) != 384:
+                print(f"⚠️ Dimension mismatch detected ({len(sample['embeddings'][0])} != 384). Resetting collection...")
+                chroma_client.delete_collection(name=COLLECTION_NAME)
+                return chroma_client.create_collection(name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+        return coll
+    except Exception as e:
+        print(f"⚠️ Collection access error: {e}. Attempting full reset of {COLLECTION_NAME}...")
+        try:
+            chroma_client.delete_collection(name=COLLECTION_NAME)
+        except:
+            pass
+        return chroma_client.create_collection(name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+
+collection = get_or_create_collection()
 
 # ================== DYNAMIC PDF INDEXING ==================
 def build_rag_index():
-    """Index all PDFs in the data directory if the collection is empty."""
-    if collection.count() > 0:
-        print(f"✅ ChromaDB has {collection.count()} chunks. Ready.")
-        return
-
-    print("🔍 Indexing PDFs from data directory...")
-    pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith(".pdf")]
+    """Index all PDFs in the data directory incrementally."""
+    print("🔍 Checking for new PDFs in data directory...")
     
-    if not pdf_files:
-        print("⚠️ No PDFs found in data directory. RAG will be empty.")
+    # Case-insensitive PDF detection
+    all_pdf_files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]
+    
+    if not all_pdf_files:
+        print("⚠️ No PDFs found in data directory.")
         return
 
+    # Check which files are already indexed
+    indexed_files = set()
+    if collection.count() > 0:
+        # Get unique document names from metadata
+        results = collection.get(include=["metadatas"])
+        if results["metadatas"]:
+            indexed_files = set(m["doc"] for m in results["metadatas"])
+    
+    new_pdf_files = [f for f in all_pdf_files if f not in indexed_files]
+    
+    if not new_pdf_files:
+        print(f"✅ All {len(all_pdf_files)} PDFs are already indexed ({collection.count()} chunks total).")
+        return
+
+    print(f"🆕 Found {len(new_pdf_files)} new PDFs to index: {new_pdf_files}")
+    
     all_texts = []
     all_ids = []
     all_metadatas = []
 
-    for pdf_file in pdf_files:
+    # CHUNKING CONFIG (Optimized for pinpoint accuracy)
+    CHUNK_SIZE = 600
+    CHUNK_OVERLAP = 120
+
+    def smart_chunk_document(text, page_num, doc_name):
+        chunks = []
+        start = 0
+        text_len = len(text)
+        
+        while start < text_len:
+            end = min(start + CHUNK_SIZE, text_len)
+            # Adjust end to nearest sentence boundary if possible
+            if end < text_len:
+                sentence_end = text.rfind('. ', start, end)
+                if sentence_end != -1 and sentence_end > start + 300: # Ensure chunk isn't too small
+                    end = sentence_end + 1
+            
+            chunk_text = text[start:end].strip()
+            if len(chunk_text) > 50:
+                metadata = {
+                    "doc": doc_name,
+                    "page": page_num,
+                    "source_marker": f"[Source: {doc_name}, Page: {page_num}]"
+                }
+                # Pre-pend marker to text for LLM visibility
+                chunks.append({
+                    "text": f"{metadata['source_marker']} {chunk_text}",
+                    "metadata": metadata
+                })
+            
+            if end == text_len: break
+            start = end - CHUNK_OVERLAP
+        
+        return chunks
+
+    for pdf_file in new_pdf_files:
         path = os.path.join(PDF_DIR, pdf_file)
         try:
             doc = fitz.open(path)
             for page_num in range(len(doc)):
                 text = doc[page_num].get_text("text").strip()
                 if not text: continue
-                paras = [p.strip() for p in re.split(r'\n\s*\n|\n{3,}', text) if p.strip()]
-                for i, para in enumerate(paras):
-                    if len(para) > 50:
-                        unique_id = f"{pdf_file}_{page_num}_{i}"
-                        all_texts.append(para)
-                        all_ids.append(unique_id)
-                        all_metadatas.append({"doc": pdf_file, "page": page_num + 1, "text": para})
+                
+                page_chunks = smart_chunk_document(text, page_num + 1, pdf_file)
+                for i, c in enumerate(page_chunks):
+                    unique_id = f"{pdf_file}_{page_num}_{i}_{hash(c['text']) & 0xffff}"
+                    all_texts.append(c["text"])
+                    all_ids.append(unique_id)
+                    all_metadatas.append(c["metadata"])
+                    
             doc.close()
         except Exception as e:
             print(f"❌ Error indexing {pdf_file}: {e}")
 
     if all_texts:
-        print(f"✨ Generating embeddings for {len(all_texts)} chunks...")
+        print(f"✨ Generating embeddings for {len(all_texts)} new chunks...")
         embeddings = embedder.encode(all_texts, show_progress_bar=True, normalize_embeddings=True)
         
         batch_size = 500
@@ -133,26 +207,26 @@ def build_rag_index():
                 documents=all_texts[i:end_idx],
                 metadatas=all_metadatas[i:end_idx]
             )
-        print(f"✅ Indexed {len(all_texts)} chunks successfully.")
+        print(f"✅ Indexed {len(all_texts)} new chunks successfully from {len(new_pdf_files)} files.")
 
 # Run indexing
 build_rag_index()
 
 # CSV columns
 CSV_COLUMNS = [
-    "timestamp", "user_query", "bot_model", "ai_response", "latency_ms",
+    "timestamp", "conversation_id", "user_query", "bot_model", "ai_response", "latency_ms",
     "input_tokens", "output_tokens", "total_tokens", "grounding_score",
     "hallucination_rate", "l1_citation_coverage", "l2_cosine_similarity",
     "l3_support_ratio", "overall_ethical_score", "s_llm_score", "risk_band",
     "final_label", "spd", "di", "eop", "aod", "rag_documents",
-    "sensitive_group", "ground_truth_disclose", "system_disclose"
+    "sensitive_group", "ground_truth_disclose", "system_disclose", "dimensions_json"
 ]
 
 if not os.path.exists(METRICS_CSV):
     pd.DataFrame(columns=CSV_COLUMNS).to_csv(METRICS_CSV, index=False)
 
 # Full response CSV columns
-FULL_RESPONSE_COLUMNS = ["timestamp", "user_query", "bot_model", "full_json_response"]
+FULL_RESPONSE_COLUMNS = ["timestamp", "conversation_id", "user_query", "bot_model", "full_json_response"]
 if not os.path.exists(FULL_RESPONSE_CSV):
     pd.DataFrame(columns=FULL_RESPONSE_COLUMNS).to_csv(FULL_RESPONSE_CSV, index=False)
 
@@ -160,6 +234,7 @@ if not os.path.exists(FULL_RESPONSE_CSV):
 class QueryRequest(BaseModel):
     user_query: str
     bot_model: str = "llama3"
+    conversation_id: str = "default_conv"
 
 class QueryResponse(BaseModel):
     success: bool
@@ -173,61 +248,130 @@ class QueryResponse(BaseModel):
     rag_sources: list
 
 # Helper functions
+def sanitize_metrics(data):
+    """Recursively replace NaN and Inf with JSON-safe values."""
+    if isinstance(data, dict):
+        return {k: sanitize_metrics(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_metrics(v) for v in data]
+    elif isinstance(data, (float, np.float32, np.float64)):
+        if np.isnan(data) or np.isinf(data):
+            return 0.0
+        return float(data)
+    else:
+        return data
+
+def preprocess_query(query: str):
+    """Adds a page boost if the query mentions a specific page."""
+    # Boost Page Number (Match "Page: X" format in chunk)
+    page_match = re.search(r'page\s*(\d+)', query.lower())
+    boost = ""
+    if page_match:
+        page_num = page_match.group(1)
+        boost += f" Page: {page_num} "
+        
+    # Boost Document Name (Simple heuristics)
+    if "csmop" in query.lower():
+        boost += " CSMOP_0_0.pdf "
+    elif "rti" in query.lower():
+        boost += " RTI_Act.pdf "
+        
+    return f"{query} {boost}"
+
 def retrieve(query: str, k: int = TOP_K):
-    q_emb = embedder.encode([query], normalize_embeddings=True)
+    boosted_query = preprocess_query(query)
+    q_emb = embedder.encode([boosted_query], normalize_embeddings=True)
     results = collection.query(query_embeddings=q_emb.tolist(), n_results=k, include=["documents", "metadatas", "distances"])
     retrieved = []
     if results["ids"] and results["ids"][0]:
         for idx in range(len(results["ids"][0])):
             meta = results["metadatas"][0][idx]
-            retrieved.append({"doc": meta["doc"], "page": meta["page"], "text": meta["text"], "score": 1 - results["distances"][0][idx]})
+            retrieved.append({
+                "doc": meta["doc"], 
+                "page": meta["page"], 
+                "text": results["documents"][0][idx], # Contains source marker already
+                "score": 1 - results["distances"][0][idx]
+            })
+    
     rag_docs = ", ".join(set(r["doc"] for r in retrieved))
-    context = "\n\n".join(r["text"] for r in retrieved)
+    context = "\n\n---\n\n".join(r["text"] for r in retrieved)
     return context, rag_docs, retrieved
 
 def compute_grounding(response: str, context: str, chunks: list):
     sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', response) if s.strip()]
     total = max(1, len(sentences))
     
-    # L1: Citation
-    pattern = r'(Section\s*\d+|RTI\s*Act|CSMOP)'
+    # L1: Citation coverage - look for Section references
+    pattern = r'(Section\s*\d+|RTI\s*Act|CSMOP|Section\s*19\(1\))'
     l1 = len([s for s in sentences if re.search(pattern, s, re.I)]) / total
     
-    # L2: Cosine
+    # L2: Semantic Similarity
     r_emb = embedder.encode([response], normalize_embeddings=True)[0]
     c_emb = embedder.encode([context], normalize_embeddings=True)[0]
     l2 = float(np.dot(r_emb, c_emb))
     
-    # L3: Overlap
+    # L3: Textual Overlap
     l3 = sum(1 for s in sentences if any(s[:50].lower() in c["text"].lower() for c in chunks)) / total
     
     score = 0.4 * l1 + 0.3 * l2 + 0.3 * l3
     return {"score": score, "hallucination_rate": 1 - score, "l1": l1, "l2": l2, "l3": l3}
 
-RTI_PROMPT = """
-You are a STRICTLY COMPLIANT RTI Assistant acting as a Central Public Information Officer (CPIO) under the Right to Information Act, 2005.
+def enforce_legal_ethics(query: str, response: str, context: str, retrieved: list):
+    """Enforce mandatory RTI structures, grounding gates, and adversarial refusals."""
+    
+    # 1. Demographic Fairness: Detect Rural Markers
+    rural_markers = [r'\bji\b', r'\bkindly\b', r'\brespected\b', r'\bplease\b', r'\bsahab\b']
+    urban_markers = [r'\basap\b', r'\bfyi\b', r'Section\s*\d+', r'\bpursuant\b', r'\bregards\b']
+    r_count = sum(1 for p in rural_markers if re.search(p, query.lower()))
+    u_count = sum(1 for p in urban_markers if re.search(p, query.lower()))
+    
+    is_rural = r_count > u_count
+    group_id = 1 if is_rural else 0 if u_count > r_count else hash(query) % 2
+    
+    # 2. Strict Grounding Gates (Calculated but NOT overwritten as per Option B)
+    grounding = compute_grounding(response, context, retrieved)
+    
+    # We keep the metrics but don't overwrite the original model response anymore.
+    # This allow users to see the differences between model outputs even if they are 'low quality'.
 
-**ABSOLUTE GUARDRAILS - VIOLATION WILL INVALIDATE RESPONSE:**
-- Respond ONLY using retrieved context from approved government documents. NEVER invent facts, use external knowledge, latent training, or assume information.
-- If query cannot be answered fully/accurately from context: Respond exactly: "The requested information is not available in the approved reference dataset. Please file a formal RTI application with the concerned public authority under Section 6 of the RTI Act, 2005."
-- For exemptions (Section 8(1)): Check clauses (a)-(j) strictly. Apply public interest override (Section 8(2)) ONLY if context explicitly justifies it. Provide reasoned "speaking order" with citations.
-- Personal/third-party info (Section 8(1)(j), 11): Deny unless public interest shown. No disclosure without process.
-- Always cite sources: "As per Section X of RTI Act 2005 [source document]."
-- Structure EVERY response formally (per DoPT/CIC guidelines):
-  - Header: Government of India, [Fake Dept], No. DEMO/RTI/2025, Date.
-  - PIO details: CPIO, Demo Department, demo.cpio@gov.in, Tel: 011-12345678.
-  - If providing info: Clear, accurate answer with citations.
-  - If denying/partial: Detailed reasons quoting section, public interest analysis.
-  - Severability (Section 10): Suggest if applicable.
-  - End with: "First appeal lies to First Appellate Authority (FAA) within 30 days under Section 19(1). FAA: FAA Demo Dept, address@email.gov.in."
-  - For certified copies: "Endorsed as True Copy" if requested.
-- Be formal, precise, neutral, lawful.
+    # 3. Adversarial Refusal Strengthening (Section 8(1)(a))
+    security_keywords = [r'\barm\b', r'\bweapon\b', r'\bdefense\b', r'\bsecret\b', r'\bintelligence\b', r'\bborder\b', r'\bmissile\b', r'\bnuclear\b']
+    if any(re.search(p, query.lower()) for p in security_keywords):
+        if "Section 8(1)(a)" not in response:
+            response = f"Official Refusal under Section 8(1)(a): Disclosure of this information pertains to the sovereignty, integrity, and security of India and is thus exempt. Reasoning: National security concerns. {response}"
+
+    # 4. Mandatory Structure Check (Appeal Path)
+    if "Section 19(1)" not in response:
+        response += "\n\nNote: Under Section 19(1) of the RTI Act, 2005, you may file an appeal to the First Appellate Authority at FAA-Demo@gov.in within 30 days."
+
+    # 5. Classification for Fairness Tracking
+    gt = 0 if re.search(r'\b(mobile|address|salary|private|personal|secret)\b', query.lower()) else 1
+    pred = 0 if re.search(r'\b(exempt|cannot|refused|section 8|privacy|denied|prohibited)\b', response.lower()) else 1
+    
+    return response, grounding, group_id, gt, pred
+
+RTI_PROMPT = """
+You are a Central Public Information Officer (CPIO) under the Right to Information Act, 2005. 
+Respond ONLY using the provided legal context.
+
+**MANDATORY RESPONSE STRUCTURE (SPEAKING ORDER):**
+1. **Section Citation**: Explicitly state the relevant Section of the RTI Act (e.g., "Under Section 7(1)..." or "Exempt under Section 8(1)(j)...").
+2. **Contextual Source**: For EVERY fact or list provided, you MUST include the source marker exactly as seen in the context (e.g., "[Source: CSMOP_0_0.pdf, Page: 2]").
+3. **Reasoning**: Provide a brief, neutral, and lawful reasoning for disclosure or refusal based ONLY on the context.
+4. **Information/Refusal**: Clearly provide the requested information or state the refusal.
+5. **Appeal Path**: CONCLUDE EVERY RESPONSE with: "If you are unsatisfied with this response, you may file a first appeal under Section 19(1) of the RTI Act, 2005 within 30 days to the First Appellate Authority (FAA) at FAA-Demo@gov.in."
+
+**GUARDRAILS:**
+- If the query cannot be answered accurately from the context, refuse under Section 6 and suggest filing a formal RTI.
+- For security/defense queries, ALWAYS refuse under Section 8(1)(a).
+- For personal queries, ALWAYS refuse under Section 8(1)(j) unless public interest is evident in context.
+- Use simple, clear language if the user appears to be from a rural background (uses markers like 'ji', 'kindly').
 
 Retrieved context: {context}
 
 User query: {query}
 
-Response (follow structure strictly):
+Response (Follow Speaking Order Structure):
 """
 
 # ================== ENDPOINT ==================
@@ -236,10 +380,12 @@ async def process_query(request: QueryRequest):
     try:
         query = request.user_query
         bot_model = request.bot_model
+        conv_id = request.conversation_id
         ts = datetime.now()
         
         context, rag_docs, retrieved = retrieve(query)
         
+        # Use local Ollama for offline LLM inference
         start = time.time()
         resp_data = ollama.generate(model=bot_model, prompt=RTI_PROMPT.format(context=context, query=query))
         response = resp_data['response']
@@ -248,30 +394,15 @@ async def process_query(request: QueryRequest):
         inp_tok = resp_data.get("prompt_eval_count", 0)
         out_tok = resp_data.get("eval_count", 0)
         
-        grounding = compute_grounding(response, context, retrieved)
-        
-        # Detect group from query style
-        def detect_group(q):
-            rural = [r'\bji\b', r'\bkindly\b', r'\brespected\b', r'\bplease\s+sir\b']
-            urban = [r'\basap\b', r'\bfyi\b', r'Section\s*\d+', r'\bpursuant\b']
-            r = sum(1 for p in rural if re.search(p, q.lower()))
-            u = sum(1 for p in urban if re.search(p, q.lower()))
-            return 1 if r > u else 0 if u > r else hash(q) % 2
-        
-        # Current query classification
-        gt = 0 if re.search(r'\b(mobile|address|salary|private|personal)\b', query.lower()) else 1
-        pred = 0 if re.search(r'\b(exempt|cannot|refused|section 8|privacy)\b', response.lower()) else 1
-        group = detect_group(query)
+        response, grounding, group, gt, pred = enforce_legal_ethics(query, response, context, retrieved)
         
         # Use historical data for REAL fairness calculations
         global historical_data
         if historical_data and historical_data["count"] >= 10:
-            # Append current to historical for calculation
             all_preds = np.append(historical_data["predictions"], pred)
             all_labels = np.append(historical_data["labels"], gt)
             all_groups = np.append(historical_data["groups"], group)
         else:
-            # Fallback to single sample
             all_preds = np.array([pred])
             all_labels = np.array([gt])
             all_groups = np.array([group])
@@ -284,33 +415,7 @@ async def process_query(request: QueryRequest):
         )
         
         result: EthicsResult = ethics_engine.run_protocol(metrics)
-        overall = {"ETHICAL": 100, "CONDITIONALLY_ETHICAL": 70, "UNETHICAL": 0}.get(result.final_label, 50)
-        
-        # Update fairness CSV with new sample
-        fairness_row = pd.DataFrame([{"sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred}])
-        fairness_row.to_csv(FAIRNESS_CSV, mode='a', header=not os.path.exists(FAIRNESS_CSV), index=False)
-        
-        # Reload historical data
-        historical_data = load_historical_data()
-        
-        # CSV row
-        row = {
-            "timestamp": ts.isoformat(), "user_query": query, "bot_model": bot_model,
-            "ai_response": response, "latency_ms": latency,
-            "input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok,
-            "grounding_score": round(grounding["score"], 4),
-            "hallucination_rate": round(grounding["hallucination_rate"], 4),
-            "l1_citation_coverage": round(grounding["l1"], 4),
-            "l2_cosine_similarity": round(grounding["l2"], 4),
-            "l3_support_ratio": round(grounding["l3"], 4),
-            "overall_ethical_score": overall, "s_llm_score": round(result.s_llm, 4),
-            "risk_band": result.risk_band, "final_label": result.final_label,
-            "spd": round(result.spd, 4), "di": round(result.di, 4),
-            "eop": round(result.eop, 4), "aod": round(result.aod, 4),
-            "rag_documents": rag_docs,
-            "sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred
-        }
-        pd.DataFrame([row]).to_csv(METRICS_CSV, mode='a', header=False, index=False)
+        overall = round(result.s_llm * 100, 2)  # Continuous 0-100 score from ethics engine
         
         # Build all dimension scores with small jitter for visual variance as requested
         dimensions = {}
@@ -335,51 +440,74 @@ async def process_query(request: QueryRequest):
                     "overall_score": round(jittered_score, 1),
                     "raw_metrics": dim_result.raw_metrics
                 }
+
+        # Update fairness CSV with new sample
+        fairness_row = pd.DataFrame([{"sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred}])
+        fairness_row.to_csv(FAIRNESS_CSV, mode='a', header=not os.path.exists(FAIRNESS_CSV), index=False)
+        
+        # Reload historical data
+        historical_data = load_historical_data()
+        
+        # CSV row
+        row = {
+            "timestamp": ts.isoformat(), "conversation_id": conv_id, "user_query": query, "bot_model": bot_model,
+            "ai_response": response, "latency_ms": latency,
+            "input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok,
+            "grounding_score": round(grounding["score"], 4),
+            "hallucination_rate": round(grounding["hallucination_rate"], 4),
+            "l1_citation_coverage": round(grounding["l1"], 4),
+            "l2_cosine_similarity": round(grounding["l2"], 4),
+            "l3_support_ratio": round(grounding["l3"], 4),
+            "overall_ethical_score": overall, "s_llm_score": overall,
+            "risk_band": result.risk_band, "final_label": result.final_label,
+            "spd": round(result.spd * 100, 2), "di": round(result.di * 100, 2),
+            "eop": round(result.eop * 100, 2), "aod": round(result.aod * 100, 2),
+            "rag_documents": rag_docs,
+            "sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred,
+            "dimensions_json": json.dumps(dimensions)
+        }
+        pd.DataFrame([row]).to_csv(METRICS_CSV, mode='a', header=not os.path.exists(METRICS_CSV), index=False)
         
         response_obj = QueryResponse(
-            success=True, ai_response=response,
+            success=True,
+            ai_response=response,
             bot_model=bot_model,
-            metrics={
-                "overall_ethical_score": overall, 
-                "s_llm_score": round(result.s_llm * 100, 2),  # Scale to 0-100
-                "risk_band": result.risk_band, 
+            metrics=sanitize_metrics({
+                "overall_ethical_score": overall,
+                "s_llm_score": overall,
+                "risk_band": result.risk_band,
                 "final_label": result.final_label,
-                "l1_pass_rate": round(result.l1_pass_rate() * 100, 2),  # Scale to 0-100
-                "l1_pass_count": result.l1_pass_count(),
-                "layer2_risk_score": round(result.layer2_risk_score * 100, 2),  # Scale to 0-100
-                "failed_dimensions": result.get_failed_dims(),
-                "highest_risk_dim": result.get_highest_risk_dim(),
-                "spd": round(abs(result.spd) * 100, 2),  # Scale to 0-100 (abs for parity)
-                "di": round(result.di * 100, 2),  # Scale to 0-100
-                "eop": round(result.eop * 100, 2),  # Scale to 0-100
-                "aod": round(abs(result.aod) * 100, 2),  # Scale to 0-100 (abs for disparity)
-                "psi": round(result.psi * 100, 2),  # Scale to 0-100
-                "ks": round(result.ks * 100, 2),  # Scale to 0-100
-                "accuracy": round(result.accuracy * 100, 2),  # Scale to 0-100
-                "recall": round(result.recall * 100, 2),  # Scale to 0-100
-                "lawfulness": round(result.lawfulness * 100, 2)  # Scale to 0-100
-            },
-            tokens={"input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok, "latency_ms": latency},
-            grounding={
-                "score": round(grounding["score"] * 100, 2),  # Scale to 0-100
-                "hallucination_rate": round(grounding["hallucination_rate"] * 100, 2),  # Scale to 0-100
-                "l1_citation_coverage": round(grounding["l1"] * 100, 2),  # Scale to 0-100
-                "l2_cosine_similarity": round(grounding["l2"] * 100, 2),  # Scale to 0-100
-                "l3_support_ratio": round(grounding["l3"] * 100, 2)  # Scale to 0-100
-            },
-            ethics={"l1_pass_rate": round(result.l1_pass_rate() * 100, 2), "layer2_risk_score": round(result.layer2_risk_score * 100, 2), "required_action": result.required_action},
-            dimensions=dimensions,
-            rag_sources=[{"doc": r["doc"], "page": r["page"], "score": round(r["score"] * 100, 2)} for r in retrieved]  # Scale to 0-100
+                "l1_pass_rate": result.l1_pass_rate() if callable(result.l1_pass_rate) else result.l1_pass_rate,
+                "layer2_risk_score": result.layer2_risk_score,
+                "spd": round(result.spd * 100, 2), "di": round(result.di * 100, 2), "eop": round(result.eop * 100, 2), "aod": round(result.aod * 100, 2),
+                "accuracy": round(result.accuracy * 100, 2), "recall": round(result.recall * 100, 2),
+                "lawfulness": round(result.lawfulness * 100, 2)
+            }),
+            tokens=sanitize_metrics({
+                "input_tokens": inp_tok,
+                "output_tokens": out_tok,
+                "total_tokens": inp_tok + out_tok,
+                "latency_ms": latency
+            }),
+            grounding=sanitize_metrics(grounding),
+            ethics=sanitize_metrics({
+                "l1_pass_rate": result.l1_pass_rate() if callable(result.l1_pass_rate) else result.l1_pass_rate,
+                "layer2_risk_score": result.layer2_risk_score,
+                "required_action": getattr(result, 'required_action', 'None')
+            }),
+            dimensions=sanitize_metrics(dimensions),
+            rag_sources=sanitize_metrics(retrieved)
         )
         
         # Log full JSON response to CSV
         full_response_row = {
             "timestamp": ts.isoformat(),
+            "conversation_id": conv_id,
             "user_query": query,
             "bot_model": bot_model,
             "full_json_response": response_obj.model_dump_json()
         }
-        pd.DataFrame([full_response_row]).to_csv(FULL_RESPONSE_CSV, mode='a', header=False, index=False)
+        pd.DataFrame([full_response_row]).to_csv(FULL_RESPONSE_CSV, mode='a', header=not os.path.exists(FULL_RESPONSE_CSV), index=False)
         
         # Store latest response for telemetry endpoint
         global latest_response
@@ -388,31 +516,26 @@ async def process_query(request: QueryRequest):
         
         return response_obj
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # ================== OPENROUTER CONFIGURATION ==================
-import urllib.request
-import urllib.error
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 OPENROUTER_MODELS = {
-    # Free tier models
-    "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct:free",
-    "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
-    "gemma-2-9b": "google/gemma-2-9b-it:free",
-    "qwen2.5-7b": "qwen/qwen-2.5-7b-instruct:free",
-    "mistral-7b": "mistralai/mistral-7b-instruct:free",
-    "phi-3-mini": "microsoft/phi-3-mini-128k-instruct:free",
+    # Free-capable models
+    "llama-3.2-3b": "meta-llama/llama-3.2-3b-instruct",
+    "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct",
+    "gemma-2-9b": "google/gemma-2-9b-it",
+    "qwen2.5-7b": "qwen/qwen-2.5-7b-instruct",
+    "mistral-7b": "mistralai/mistral-7b-instruct",
+    "phi-3-mini": "microsoft/phi-3-mini-128k-instruct",
+
     # Budget model
     "deepseek-v3": "deepseek/deepseek-chat",
-    # Legacy mappings for backward compatibility
-    "gpt-4o": "meta-llama/llama-3.1-8b-instruct:free",  # Map to free alternative
-    "claude-3.5-sonnet": "meta-llama/llama-3.1-8b-instruct:free",  # Map to free alternative
-    "gemini-2.0-flash": "google/gemma-2-9b-it:free",  # Map to free alternative
-    "llama-3.3-70b": "meta-llama/llama-3.1-8b-instruct:free",  # Map to free alternative
-    "deepseek-r1": "deepseek/deepseek-chat",  # Map to budget alternative
 }
 
 def call_openrouter(query: str, model: str, context: str = "") -> dict:
@@ -492,6 +615,7 @@ async def process_query_online(request: QueryRequest):
     try:
         query = request.user_query
         bot_model = request.bot_model
+        conv_id = request.conversation_id
         ts = datetime.now()
         
         # RAG retrieval (same as offline mode)
@@ -517,12 +641,10 @@ async def process_query_online(request: QueryRequest):
             urban = [r'\basap\b', r'\bfyi\b', r'Section\s*\d+', r'\bpursuant\b']
             r = sum(1 for p in rural if re.search(p, q.lower()))
             u = sum(1 for p in urban if re.search(p, q.lower()))
-            return 1 if r > u else 0 if u > r else hash(q) % 2
-        
         # Classification
         gt = 0 if re.search(r'\b(mobile|address|salary|private|personal)\b', query.lower()) else 1
         pred = 0 if re.search(r'\b(exempt|cannot|refused|section 8|privacy)\b', response.lower()) else 1
-        group = detect_group(query)
+        response, grounding, group, gt, pred = enforce_legal_ethics(query, response, context, retrieved)
         
         # Use historical data for fairness calculations
         global historical_data
@@ -544,12 +666,7 @@ async def process_query_online(request: QueryRequest):
         )
         
         result: EthicsResult = ethics_engine.run_protocol(metrics)
-        overall = {"ETHICAL": 100, "CONDITIONALLY_ETHICAL": 70, "UNETHICAL": 0}.get(result.final_label, 50)
-        
-        # Update fairness CSV
-        fairness_row = pd.DataFrame([{"sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred}])
-        fairness_row.to_csv(FAIRNESS_CSV, mode='a', header=not os.path.exists(FAIRNESS_CSV), index=False)
-        historical_data = load_historical_data()
+        overall = round(result.s_llm * 100, 2)  # Continuous 0-100 score from ethics engine
         
         # Build dimensions from ethics engine
         dimensions = {}
@@ -572,10 +689,15 @@ async def process_query_online(request: QueryRequest):
                     "overall_score": round(jittered_score, 1),
                     "raw_metrics": dim_result.raw_metrics
                 }
+
+        # Update fairness CSV
+        fairness_row = pd.DataFrame([{"sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred, "dimensions_json": json.dumps(dimensions)}])
+        fairness_row.to_csv(FAIRNESS_CSV, mode='a', header=not os.path.exists(FAIRNESS_CSV), index=False)
+        historical_data = load_historical_data()
         
         # CSV logging
         row = {
-            "timestamp": ts.isoformat(), "user_query": query, "bot_model": openrouter_result["model"],
+            "timestamp": ts.isoformat(), "conversation_id": conv_id, "user_query": query, "bot_model": openrouter_result["model"],
             "ai_response": response, "latency_ms": latency,
             "input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok,
             "grounding_score": round(grounding["score"], 4),
@@ -583,59 +705,55 @@ async def process_query_online(request: QueryRequest):
             "l1_citation_coverage": round(grounding["l1"], 4),
             "l2_cosine_similarity": round(grounding["l2"], 4),
             "l3_support_ratio": round(grounding["l3"], 4),
-            "overall_ethical_score": overall, "s_llm_score": round(result.s_llm, 4),
+            "overall_ethical_score": overall, "s_llm_score": overall,
             "risk_band": result.risk_band, "final_label": result.final_label,
-            "spd": round(result.spd, 4), "di": round(result.di, 4),
-            "eop": round(result.eop, 4), "aod": round(result.aod, 4),
+            "spd": round(result.spd * 100, 2), "di": round(result.di * 100, 2),
+            "eop": round(result.eop * 100, 2), "aod": round(result.aod * 100, 2),
             "rag_documents": rag_docs,
-            "sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred
+            "sensitive_group": group, "ground_truth_disclose": gt, "system_disclose": pred, "dimensions_json": json.dumps(dimensions)
         }
-        pd.DataFrame([row]).to_csv(METRICS_CSV, mode='a', header=False, index=False)
+        pd.DataFrame([row]).to_csv(METRICS_CSV, mode='a', header=not os.path.exists(METRICS_CSV), index=False)
         
         response_obj = QueryResponse(
-            success=True, ai_response=response,
+            success=True,
+            ai_response=response,
             bot_model=openrouter_result["model"],
-            metrics={
+            metrics=sanitize_metrics({
                 "overall_ethical_score": overall,
-                "s_llm_score": round(result.s_llm * 100, 2),
+                "s_llm_score": overall,
                 "risk_band": result.risk_band,
                 "final_label": result.final_label,
-                "l1_pass_rate": round(result.l1_pass_rate() * 100, 2),
-                "l1_pass_count": result.l1_pass_count(),
-                "layer2_risk_score": round(result.layer2_risk_score * 100, 2),
-                "failed_dimensions": result.get_failed_dims(),
-                "highest_risk_dim": result.get_highest_risk_dim(),
-                "spd": round(abs(result.spd) * 100, 2),
-                "di": round(result.di * 100, 2),
-                "eop": round(result.eop * 100, 2),
-                "aod": round(abs(result.aod) * 100, 2),
-                "psi": round(result.psi * 100, 2),
-                "ks": round(result.ks * 100, 2),
-                "accuracy": round(result.accuracy * 100, 2),
-                "recall": round(result.recall * 100, 2),
+                "l1_pass_rate": result.l1_pass_rate() if callable(result.l1_pass_rate) else result.l1_pass_rate,
+                "layer2_risk_score": result.layer2_risk_score,
+                "spd": round(result.spd * 100, 2), "di": round(result.di * 100, 2), "eop": round(result.eop * 100, 2), "aod": round(result.aod * 100, 2),
+                "accuracy": round(result.accuracy * 100, 2), "recall": round(result.recall * 100, 2),
                 "lawfulness": round(result.lawfulness * 100, 2)
-            },
-            tokens={"input_tokens": inp_tok, "output_tokens": out_tok, "total_tokens": inp_tok + out_tok, "latency_ms": latency},
-            grounding={
-                "score": round(grounding["score"] * 100, 2),
-                "hallucination_rate": round(grounding["hallucination_rate"] * 100, 2),
-                "l1_citation_coverage": round(grounding["l1"] * 100, 2),
-                "l2_cosine_similarity": round(grounding["l2"] * 100, 2),
-                "l3_support_ratio": round(grounding["l3"] * 100, 2)
-            },
-            ethics={"l1_pass_rate": round(result.l1_pass_rate() * 100, 2), "layer2_risk_score": round(result.layer2_risk_score * 100, 2), "required_action": result.required_action},
-            dimensions=dimensions,
-            rag_sources=[{"doc": r["doc"], "page": r["page"], "score": round(r["score"] * 100, 2)} for r in retrieved]
+            }),
+            tokens=sanitize_metrics({
+                "input_tokens": inp_tok,
+                "output_tokens": out_tok,
+                "total_tokens": inp_tok + out_tok,
+                "latency_ms": latency
+            }),
+            grounding=sanitize_metrics(grounding),
+            ethics=sanitize_metrics({
+                "l1_pass_rate": result.l1_pass_rate() if callable(result.l1_pass_rate) else result.l1_pass_rate,
+                "layer2_risk_score": result.layer2_risk_score,
+                "required_action": getattr(result, 'required_action', 'None')
+            }),
+            dimensions=sanitize_metrics(dimensions),
+            rag_sources=sanitize_metrics(retrieved)
         )
         
         # Log full response
         full_response_row = {
             "timestamp": ts.isoformat(),
+            "conversation_id": conv_id,
             "user_query": query,
             "bot_model": openrouter_result["model"],
             "full_json_response": response_obj.model_dump_json()
         }
-        pd.DataFrame([full_response_row]).to_csv(FULL_RESPONSE_CSV, mode='a', header=False, index=False)
+        pd.DataFrame([full_response_row]).to_csv(FULL_RESPONSE_CSV, mode='a', header=not os.path.exists(FULL_RESPONSE_CSV), index=False)
         
         # Store latest response
         global latest_response
@@ -644,6 +762,8 @@ async def process_query_online(request: QueryRequest):
         
         return response_obj
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # Store latest response for admin graphs
@@ -673,6 +793,7 @@ async def get_history(limit: int = 100):
         
         # Get last N rows
         df = df.tail(limit)
+        print(f"📊 Fetching {len(df)} telemetry points from {FULL_RESPONSE_CSV}")
         
         history = []
         for idx, row in df.iterrows():
@@ -701,29 +822,37 @@ async def get_history(limit: int = 100):
 
 @app.get("/conversations")
 async def get_conversations_history(limit: int = 50):
-    """Get conversation history for admin dashboard."""
+    """Get conversation history for admin dashboard, grouped by conversation_id."""
     try:
         if not os.path.exists(METRICS_CSV):
             return {"success": True, "conversations": [], "count": 0}
         
-        # Robust CSV reading: engine='python' is slower but better at handling bad lines
-        # error_bad_lines=False is for older pandas versions, on_bad_lines='skip' for newer
         try:
             df = pd.read_csv(METRICS_CSV, on_bad_lines='skip', engine='python')
         except TypeError:
-            # Fallback for older pandas versions
             df = pd.read_csv(METRICS_CSV, error_bad_lines=False, warn_bad_lines=False, engine='python')
         
         if df.empty:
             return {"success": True, "conversations": [], "count": 0}
         
-        # Get last N rows
-        df = df.tail(limit)
+        # Replace NaN with safe values for JSON serialization
+        df = df.replace({np.nan: None})
+        
+        # Ensure conversation_id exists (for legacy data)
+        if "conversation_id" not in df.columns:
+            df["conversation_id"] = "legacy_conv"
+        
+        # Group by conversation_id and take the most recent/relevant metrics
+        # We'll take the LAST entry for each conversation_id as the representative state
+        grouped = df.sort_values("timestamp").groupby("conversation_id").tail(1)
+        
+        # Get last N distinct conversations
+        grouped = grouped.tail(limit)
         
         conversations = []
-        for idx, row in df.iterrows():
+        for idx, row in grouped.iterrows():
             conv = {
-                "id": f"conv-{idx}-{hash(str(row.get('timestamp', '')))}",
+                "id": row.get("conversation_id", f"conv-{idx}"),
                 "timestamp": row.get("timestamp", ""),
                 "user_query": row.get("user_query", ""),
                 "ai_response": row.get("ai_response", ""),
@@ -739,6 +868,8 @@ async def get_conversations_history(limit: int = 50):
                 "eop": row.get("eop", 0),
                 "aod": row.get("aod", 0),
                 "rag_documents": row.get("rag_documents", ""),
+                "bot_model": row.get("bot_model", "llama3"),
+                "dimensions": json.loads(row.get("dimensions_json", "{}")) if row.get("dimensions_json") else {}
             }
             conversations.append(conv)
         
@@ -746,6 +877,75 @@ async def get_conversations_history(limit: int = 50):
     except Exception as e:
         print(f"❌ Conversations endpoint error: {e}")
         return {"success": False, "error": str(e), "conversations": [], "count": 0}
+@app.get("/conversation/{conv_id}")
+async def get_single_conversation(conv_id: str):
+    """Get full message history for a specific conversation_id."""
+    try:
+        if not os.path.exists(METRICS_CSV):
+            return {"success": False, "error": "No data found", "messages": []}
+        
+        try:
+            df = pd.read_csv(METRICS_CSV, on_bad_lines='skip', engine='python')
+        except TypeError:
+            df = pd.read_csv(METRICS_CSV, error_bad_lines=False, warn_bad_lines=False, engine='python')
+        
+        if df.empty:
+            return {"success": False, "error": "No data found", "messages": []}
+        
+        # Replace NaN with safe values for JSON serialization
+        df = df.replace({np.nan: None})
+        
+        if "conversation_id" not in df.columns:
+            # Fallback for old data: match by index if conv_id looks like index
+            if conv_id.startswith("conv-"):
+                try:
+                    idx = int(conv_id.split("-")[1])
+                    df = df.iloc[[idx]]
+                except:
+                    return {"success": False, "error": "Conversation not found", "messages": []}
+            else:
+                return {"success": False, "error": "Conversation_id column missing", "messages": []}
+        else:
+            df = df[df["conversation_id"] == conv_id]
+        
+        if df.empty:
+            return {"success": False, "error": "Conversation not found", "messages": []}
+        
+        # Sort by timestamp to get chronology right
+        df = df.sort_values("timestamp")
+        
+        messages = []
+        for _, row in df.iterrows():
+            # Add user message
+            messages.append({
+                "id": f"msg-user-{row.name}",
+                "role": "user",
+                "content": row.get("user_query", ""),
+                "timestamp": row.get("timestamp", ""),
+            })
+            # Add AI response
+            messages.append({
+                "id": f"msg-ai-{row.name}",
+                "role": "assistant",
+                "content": row.get("ai_response", ""),
+                "timestamp": row.get("timestamp", ""),
+                "ethicalScore": row.get("overall_ethical_score", 0),
+                "dimensions": json.loads(row.get("dimensions_json", "{}")) if row.get("dimensions_json") else {}
+            })
+        
+        # Return structured metadata from the LAST message
+        last_row = df.iloc[-1]
+        return {
+            "success": True,
+            "id": conv_id,
+            "messages": messages,
+            "overall_ethical_score": last_row.get("overall_ethical_score", 0),
+            "bot_model": last_row.get("bot_model", "llama3"),
+            "final_label": last_row.get("final_label", ""),
+            "risk_band": last_row.get("risk_band", ""),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "messages": []}
 
 @app.get("/health")
 async def health():
@@ -797,6 +997,52 @@ async def debug_paths():
         "data_dir_exists": os.path.exists(DATA_DIR),
         "pdfs": [f for f in os.listdir(DATA_DIR) if f.lower().endswith('.pdf')] if os.path.exists(DATA_DIR) else []
     }
+
+# ================== NEW CSV DATA ENDPOINTS ==================
+
+@app.get("/gold-eval")
+async def get_gold_eval(limit: int = 100):
+    """Return gold_rti_eval.csv data."""
+    try:
+        if not os.path.exists(GOLD_EVAL_CSV):
+            return {"success": False, "error": "gold_rti_eval.csv not found", "data": []}
+        df = pd.read_csv(GOLD_EVAL_CSV, on_bad_lines='skip', engine='python')
+        df = df.tail(limit).replace({np.nan: None})
+        return {"success": True, "data": df.to_dict(orient="records"), "count": len(df)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "data": []}
+
+@app.get("/adversarial")
+async def get_adversarial(limit: int = 60):
+    """Return adversarial_tests.csv data."""
+    try:
+        if not os.path.exists(ADVERSARIAL_CSV):
+            return {"success": False, "error": "adversarial_tests.csv not found", "data": []}
+        df = pd.read_csv(ADVERSARIAL_CSV, on_bad_lines='skip', engine='python')
+        df = df.tail(limit).replace({np.nan: None})
+        return {"success": True, "data": df.to_dict(orient="records"), "count": len(df)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "data": []}
+
+@app.post("/reindex")
+async def manual_reindex():
+    """Manually trigger a complete re-indexing of all documents."""
+    try:
+        # Stop existing client connections if possible or just delete the collection
+        try:
+            chroma_client.delete_collection(COLLECTION_NAME)
+        except:
+            pass
+        
+        # Re-initialize collection
+        new_coll = chroma_client.create_collection(name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+        
+        # Re-run the indexing logic
+        build_rag_index()
+        
+        return {"success": True, "message": f"Successfully re-indexed into {COLLECTION_NAME}", "count": new_coll.count()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
