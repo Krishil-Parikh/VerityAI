@@ -7,7 +7,7 @@ let subscribers: Array<() => void> = [];
 let seenIds: Set<string> = new Set(); // Track unique IDs to prevent duplicates
 let isInitialized = false;
 
-const MAX_HISTORY = 100;
+const MAX_HISTORY = 500;
 
 const generateId = (response: BackendResponse): string => {
   // Use timestamp + first 50 chars of response as unique ID
@@ -20,7 +20,7 @@ export const metricsStore = {
   // Load historical data from backend
   loadHistory: async (): Promise<void> => {
     try {
-      const response = await fetch('/api/telemetry?mode=history&limit=100');
+      const response = await fetch('/api/telemetry?mode=history&limit=500');
       if (!response.ok) {
         console.error('Failed to load history:', response.status);
         return;

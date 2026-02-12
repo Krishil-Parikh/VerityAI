@@ -127,6 +127,12 @@ export function GraphsDashboard() {
         return data.filter(item => item.bot_model === selectedModel);
     }, [data, selectedModel]);
 
+    // All known model keys for comparison views (excludes 'all')
+    const allModelKeys = useMemo(() => ALL_MODELS.filter(m => m.value !== 'all').map(m => m.value), []);
+
+    // Models actually present in data (for fallback/display)
+    const dataModels = useMemo(() => Array.from(new Set(data.map(item => item.bot_model || 'unknown'))), [data]);
+
     // Transform data for comparison view
     const getComparisonData = () => {
         const groups: Record<string, any> = {};
@@ -178,7 +184,11 @@ export function GraphsDashboard() {
             );
         }
 
-        const availableModels = Array.from(new Set(data.map(item => item.bot_model || 'unknown')));
+        // Use all known models that exist in data for comparison charts — never drop models
+        const availableModels = allModelKeys.filter(m => dataModels.includes(m));
+        // Also include any data models not in the predefined list
+        const extraModels = dataModels.filter(m => !allModelKeys.includes(m));
+        const comparisonModels = [...availableModels, ...extraModels];
         const comparisonData = getComparisonData();
 
         switch (view) {
@@ -198,12 +208,12 @@ export function GraphsDashboard() {
                                         <YAxis domain={[0, 100]} />
                                         <Tooltip />
                                         <Legend />
-                                        {availableModels.map((model) => (
+                                        {comparisonModels.map((model) => (
                                             <Line
                                                 key={model}
                                                 type="monotone"
                                                 dataKey={model}
-                                                name={model}
+                                                name={ALL_MODELS.find(m => m.value === model)?.label || model}
                                                 stroke={MODEL_COLORS[model] || '#8884d8'}
                                                 strokeWidth={3}
                                                 dot={true}
@@ -228,12 +238,12 @@ export function GraphsDashboard() {
                                         <YAxis domain={[0, 100]} />
                                         <Tooltip />
                                         <Legend />
-                                        {availableModels.map((model) => (
+                                        {comparisonModels.map((model) => (
                                             <Line
                                                 key={`${model}_s_llm`}
                                                 type="monotone"
                                                 dataKey={`${model}_s_llm`}
-                                                name={`${model} (S_LLM)`}
+                                                name={`${(ALL_MODELS.find(m => m.value === model)?.label || model)} (S_LLM)`}
                                                 stroke={MODEL_COLORS[model] || '#8884d8'}
                                                 strokeWidth={2}
                                                 strokeDasharray="5 5"
@@ -369,12 +379,12 @@ export function GraphsDashboard() {
                                         <YAxis domain={[0, 100]} />
                                         <Tooltip />
                                         <Legend />
-                                        {availableModels.map((model) => (
+                                        {comparisonModels.map((model) => (
                                             <Line
                                                 key={`${model}_hallucination`}
                                                 type="monotone"
                                                 dataKey={`${model}_hallucination`}
-                                                name={`${model} (Hallucination %)`}
+                                                name={`${(ALL_MODELS.find(m => m.value === model)?.label || model)} (Hallucination %)`}
                                                 stroke={MODEL_COLORS[model] || '#8884d8'}
                                                 strokeWidth={2}
                                                 dot={true}
@@ -423,11 +433,12 @@ export function GraphsDashboard() {
                 );
 
             case 'rag':
-                const currentRag = filteredData.length > 0 ? filteredData[filteredData.length - 1].rag_sources : [];
+                const lastItem = filteredData[filteredData.length - 1];
+                const currentRag = lastItem?.rag_sources || [];
                 return (
                     <div className="grid gap-4">
                         <h2 className="text-xl font-semibold mb-2">Active RAG References {selectedModel !== 'all' && `(${selectedModel})`}</h2>
-                        {currentRag.length === 0 && <p className="text-muted-foreground">No RAG sources in selected data.</p>}
+                        {(!currentRag || currentRag.length === 0) && <p className="text-muted-foreground">No RAG sources in selected data.</p>}
                         {currentRag.map((source: any, idx: number) => (
                             <Card
                                 key={idx}

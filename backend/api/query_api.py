@@ -49,6 +49,7 @@ FAIRNESS_CSV = os.path.join(DATA_DIR, "fairness_data.csv")
 FULL_RESPONSE_CSV = os.path.join(DATA_DIR, "full_responses.csv")
 GOLD_EVAL_CSV = os.path.join(DATA_DIR, "gold_rti_eval.csv")
 ADVERSARIAL_CSV = os.path.join(DATA_DIR, "adversarial_tests.csv")
+BASELINE_CSV = os.path.join(DATA_DIR, "baseline_metrics.csv")
 DIMENSION_CONFIG_CSV = os.path.join(DATA_DIR, "dimension_config.csv")
 PDF_DIR = DATA_DIR
 EMBED_MODEL = "all-MiniLM-L6-v2"
@@ -81,6 +82,18 @@ if historical_data:
     print(f"✅ Loaded {historical_data['count']} historical samples for real fairness calculations")
 else:
     print("⚠️ No historical data found. Run tp.py first to generate fairness_data.csv")
+
+# Load baseline data for drift detection
+baseline_data_drift = None
+if os.path.exists(BASELINE_CSV):
+    bl_df = pd.read_csv(BASELINE_CSV)
+    baseline_data_drift = {
+        "predictions": bl_df["system_disclose"].values.astype(float),
+        "confidences": bl_df["confidence"].values.astype(float),
+    }
+    print(f"✅ Loaded {len(bl_df)} baseline samples for drift detection")
+else:
+    print("⚠️ No baseline_metrics.csv found — drift metrics will use defaults")
 
 # ChromaDB
 chroma_client = chromadb.Client(Settings(anonymized_telemetry=False, is_persistent=True, persist_directory=PERSIST_DIRECTORY))
@@ -411,7 +424,10 @@ async def process_query(request: QueryRequest):
             query=query, response=response,
             predictions=all_preds, labels=all_labels,
             sensitive_attr=all_groups,
-            latency_ms=latency, output_tokens=out_tok, grounding_score=grounding["score"]
+            latency_ms=latency, output_tokens=out_tok, grounding_score=grounding["score"],
+            baseline_predictions=baseline_data_drift["predictions"] if baseline_data_drift else None,
+            current_confidences=np.array([grounding["score"]]),
+            baseline_confidences=baseline_data_drift["confidences"] if baseline_data_drift else None,
         )
         
         result: EthicsResult = ethics_engine.run_protocol(metrics)
@@ -662,7 +678,10 @@ async def process_query_online(request: QueryRequest):
             query=query, response=response,
             predictions=all_preds, labels=all_labels,
             sensitive_attr=all_groups,
-            latency_ms=latency, output_tokens=out_tok, grounding_score=grounding["score"]
+            latency_ms=latency, output_tokens=out_tok, grounding_score=grounding["score"],
+            baseline_predictions=baseline_data_drift["predictions"] if baseline_data_drift else None,
+            current_confidences=np.array([grounding["score"]]),
+            baseline_confidences=baseline_data_drift["confidences"] if baseline_data_drift else None,
         )
         
         result: EthicsResult = ethics_engine.run_protocol(metrics)
