@@ -31,6 +31,7 @@ const MODEL_COLORS: Record<string, string> = {
     'llama3': '#8884d8',
     'deepseek-coder:6.7b': '#82ca9d',
     'qwen2.5:3b': '#ffc658',
+    'qwen2.5:latest': '#e0a800',
     'tinyllama:latest': '#ff8042',
     'gemma3:12b': '#0088fe',
     // OpenRouter models
@@ -53,6 +54,7 @@ const ALL_MODELS = [
     { value: 'llama3', label: 'Llama 3 (Local)' },
     { value: 'deepseek-coder:6.7b', label: 'DeepSeek Coder' },
     { value: 'qwen2.5:3b', label: 'Qwen 2.5' },
+    { value: 'qwen2.5:latest', label: 'Qwen 2.5 (latest)' },
     { value: 'tinyllama:latest', label: 'TinyLlama' },
     { value: 'gemma3:12b', label: 'Gemma 3' },
 ];

@@ -387,12 +387,28 @@ User query: {query}
 Response (Follow Speaking Order Structure):
 """
 
+def resolve_ollama_model(requested: str) -> str:
+    """Map the requested model to an installed Ollama model, falling back to the closest match."""
+    try:
+        installed = [m.model for m in ollama.list().models]
+    except Exception:
+        return requested
+    if not installed or requested in installed:
+        return requested
+    base = requested.split(":")[0]
+    for name in installed:
+        if name.split(":")[0] == base:
+            return name
+    print(f"⚠️ Model '{requested}' not installed, falling back to '{installed[0]}'")
+    return installed[0]
+
+
 # ================== ENDPOINT ==================
 @app.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     try:
         query = request.user_query
-        bot_model = request.bot_model
+        bot_model = resolve_ollama_model(request.bot_model)
         conv_id = request.conversation_id
         ts = datetime.now()
         
